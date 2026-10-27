@@ -2,6 +2,8 @@
 
 A smart, set-and-forget climate scheduler for Home Assistant. This app gives you a simple web interface to schedule your AC and heating, while automatically turning them off if you leave a window open or leave the house.
 
+![Config UI screenshot](screenshot.png)
+
 ## Why use this?
 
 Instead of building complex Home Assistant automations for every scenario, this app handles the heavy lifting in one place:
