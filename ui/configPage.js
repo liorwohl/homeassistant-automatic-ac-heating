@@ -2,7 +2,15 @@ import { LitElement, html, css } from 'lit';
 
 class ConfigPage extends LitElement {
   static styles = css`
-    .form-group { margin-bottom: 16px; }
+    .form-group {
+      margin-bottom: 16px;
+      label {
+        display: block;
+        &:after {
+          content: ':';
+        }
+      }
+    }
   `;
 
   static properties = {
@@ -122,17 +130,17 @@ class ConfigPage extends LitElement {
           ${this.config.schedule.map((block, i) => html`
             <div>
               <input type="time" .value="${block.time}" @change="${e => this.updateBlock(i, 'time', e.target.value)}">
-              <input type="number" .value="${block.temp}" step="0.5" @change="${e => this.updateBlock(i, 'temp', e.target.value)}">
+              <input type="number" .value="${block.temp}" step="0.5" min="17" max="30" @change="${e => this.updateBlock(i, 'temp', e.target.value)}">
               <select .value="${block.mode}" @change="${e => this.updateBlock(i, 'mode', e.target.value)}">
                 <option value="heat">Heat</option>
                 <option value="cool">Cool</option>
                 <option value="dry">Dry</option>
                 <option value="off">Off</option>
               </select>
-              <button @click="${() => this.removeBlock(i)}">X</button>
+              <button type="button" @click="${() => this.removeBlock(i)}">X</button>
             </div>
           `)}
-          <button class="add-btn" @click="${this.addBlock}">+ Add Time Block</button>
+          <button type="button" @click="${this.addBlock}">+ Add Time Block</button>
         </div>
 
         <button type="submit">Save Configuration</button>
