@@ -10,3 +10,4 @@ panel_icon: "mdi:calendar-clock"
 panel_title: "Automatic AC Heating"
 options: {}
 schema: {}
+homeassistant_api: true
