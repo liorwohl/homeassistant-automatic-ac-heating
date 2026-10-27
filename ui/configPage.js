@@ -3,45 +3,67 @@ import { LitElement, html, css } from 'lit';
 class ConfigPage extends LitElement {
   static styles = css`
     :host {
+      /* Light Mode */
+      --app-card-bg: #ffffff;
+      --app-text: #212121;
+      --app-text-sec: #727272;
+      --app-border: #e0e0e0;
+      --app-primary: #03a9f4;
+      --app-error: #f44336;
+    }
+
+    /* Dark Mode */
+    @media (prefers-color-scheme: dark) {
+      :host {
+        --app-card-bg: #1c1c1c;
+        --app-text: #e1e1e1;
+        --app-text-sec: #9b9b9b;
+        --app-border: #444444;
+        --app-primary: #03a9f4;
+        --app-error: #f44336;
+      }
+    }
+
+    :host {
       display: block;
-      color: var(--primary-text-color, #212121);
-      font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif);
+      color: var(--app-text);
+      font-family: Roboto, sans-serif;
       padding: 16px;
       max-width: 800px;
       margin: 0 auto;
     }
 
     h2 {
-      color: var(--primary-text-color, #212121);
-      font-size: var(--mdc-typography-headline5-font-size, 24px);
+      color: var(--app-text);
+      font-size: 24px;
       margin-bottom: 24px;
     }
 
     .form-group {
-      background: var(--ha-card-background, var(--card-background-color, #ffffff));
-      padding: var(--ha-card-padding, 16px);
+      background: var(--app-card-bg);
+      padding: 16px;
       margin-bottom: 16px;
-      border-radius: var(--ha-card-border-radius, 12px);
-      box-shadow: var(--ha-card-box-shadow, 0px 2px 1px -1px rgba(0, 0, 0, 0.2), 0px 1px 1px 0px rgba(0, 0, 0, 0.14), 0px 1px 3px 0px rgba(0, 0, 0, 0.12));
+      border-radius: 12px;
+      box-shadow: 0px 2px 1px -1px rgba(0, 0, 0, 0.2), 0px 1px 1px 0px rgba(0, 0, 0, 0.14), 0px 1px 3px 0px rgba(0, 0, 0, 0.12);
     }
 
     label, h3 {
       display: block;
-      font-weight: 500;
-      color: var(--secondary-text-color, #727272);
-      font-size: var(--mdc-typography-body2-font-size, 14px);
+      color: var(--app-text);
+      font-size: 16px;
+      font-weight: 400;
       margin: 0 0 4px 0;
     }
 
     .hint {
       display: block;
-      color: var(--secondary-text-color, #727272);
-      font-size: var(--mdc-typography-caption-font-size, 12px);
+      color: var(--app-text-sec);
+      font-size: 12px;
       margin-bottom: 8px;
     }
 
     .hint a {
-      color: var(--primary-color, #03a9f4);
+      color: var(--app-primary);
       text-decoration: none;
     }
 
@@ -51,16 +73,17 @@ class ConfigPage extends LitElement {
 
     select, input {
       padding: 8px 12px;
-      border: 1px solid var(--divider-color, #e0e0e0);
-      border-radius: var(--mdc-shape-small, 4px);
-      background-color: var(--card-background-color, #ffffff);
-      color: var(--primary-text-color, #212121);
-      font-size: var(--mdc-typography-body1-font-size, 16px);
+      border: 1px solid var(--app-border);
+      border-radius: 4px;
+      background-color: var(--app-card-bg);
+      color: var(--app-text);
+      font-size: 16px;
       outline: none;
+      color-scheme: light dark; 
     }
     
     select:focus, input:focus {
-      border-color: var(--primary-color, #03a9f4);
+      border-color: var(--app-primary);
     }
 
     select[multiple] {
@@ -76,12 +99,12 @@ class ConfigPage extends LitElement {
     }
 
     button {
-      background-color: var(--primary-color, #03a9f4);
-      color: var(--text-primary-color, #ffffff);
+      background-color: var(--app-primary);
+      color: #ffffff;
       border: none;
-      border-radius: var(--mdc-shape-small, 4px);
+      border-radius: 4px;
       padding: 8px 16px;
-      font-size: var(--mdc-typography-button-font-size, 14px);
+      font-size: 14px;
       font-weight: 500;
       cursor: pointer;
       text-transform: uppercase;
@@ -93,7 +116,7 @@ class ConfigPage extends LitElement {
     }
 
     .form-group > div > button {
-      background-color: var(--error-color, #f44336);
+      background-color: var(--app-error);
       padding: 8px 12px;
     }
   `;
@@ -160,7 +183,7 @@ class ConfigPage extends LitElement {
 
   render() {
     return html`
-      <h2>AC Scheduler Config</h2>
+      <h2>Automatic AC Heating Configuration</h2>
 
       <form @submit="${e => { e.preventDefault(); this.saveConfig(); }}">
 
@@ -232,7 +255,7 @@ class ConfigPage extends LitElement {
           <button type="button" @click="${this.addBlock}">+ Add Time Block</button>
         </div>
 
-        <button type="submit">Save Configuration</button>
+        <button type="submit">💾 Save Configuration</button>
       </form>
     `;
   }
