@@ -1,0 +1,10 @@
+const fs = require('fs');
+let pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+let parts = pkg.version.split('.');
+parts[2] = parseInt(parts[2]) + 1;
+pkg.version = parts.join('.');
+fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+let yaml = fs.readFileSync('config.yaml', 'utf8');
+yaml = yaml.replace(/version:\s*.*/, 'version: "' + pkg.version + '"');
+fs.writeFileSync('config.yaml', yaml);
+console.log('✅ Auto-bumped version to ' + pkg.version);

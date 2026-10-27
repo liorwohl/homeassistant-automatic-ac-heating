@@ -1,9 +1,10 @@
 {
   "name": "homeassistant-automatic-ac-heating",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "main": "index.js",
   "scripts": {
-    "build": "webpack --mode production"
+    "build": "webpack --mode production",
+    "prepare": "husky"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -12,6 +13,7 @@
   },
   "devDependencies": {
     "html-webpack-plugin": "^5.6.0",
+    "husky": "^9.1.7",
     "webpack": "^5.90.0",
     "webpack-cli": "^5.1.4"
   }

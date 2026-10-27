@@ -1,0 +1,2 @@
+node bump.js
+git add package.json config.yaml
