@@ -2,14 +2,99 @@ import { LitElement, html, css } from 'lit';
 
 class ConfigPage extends LitElement {
   static styles = css`
+    :host {
+      display: block;
+      color: var(--primary-text-color, #212121);
+      font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif);
+      padding: 16px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    h2 {
+      color: var(--primary-text-color, #212121);
+      font-size: var(--mdc-typography-headline5-font-size, 24px);
+      margin-bottom: 24px;
+    }
+
     .form-group {
+      background: var(--ha-card-background, var(--card-background-color, #ffffff));
+      padding: var(--ha-card-padding, 16px);
       margin-bottom: 16px;
-      label {
-        display: block;
-        &:after {
-          content: ':';
-        }
-      }
+      border-radius: var(--ha-card-border-radius, 12px);
+      box-shadow: var(--ha-card-box-shadow, 0px 2px 1px -1px rgba(0, 0, 0, 0.2), 0px 1px 1px 0px rgba(0, 0, 0, 0.14), 0px 1px 3px 0px rgba(0, 0, 0, 0.12));
+    }
+
+    label, h3 {
+      display: block;
+      font-weight: 500;
+      color: var(--secondary-text-color, #727272);
+      font-size: var(--mdc-typography-body2-font-size, 14px);
+      margin: 0 0 4px 0;
+    }
+
+    .hint {
+      display: block;
+      color: var(--secondary-text-color, #727272);
+      font-size: var(--mdc-typography-caption-font-size, 12px);
+      margin-bottom: 8px;
+    }
+
+    .hint a {
+      color: var(--primary-color, #03a9f4);
+      text-decoration: none;
+    }
+
+    .hint a:hover {
+      text-decoration: underline;
+    }
+
+    select, input {
+      padding: 8px 12px;
+      border: 1px solid var(--divider-color, #e0e0e0);
+      border-radius: var(--mdc-shape-small, 4px);
+      background-color: var(--card-background-color, #ffffff);
+      color: var(--primary-text-color, #212121);
+      font-size: var(--mdc-typography-body1-font-size, 16px);
+      outline: none;
+    }
+    
+    select:focus, input:focus {
+      border-color: var(--primary-color, #03a9f4);
+    }
+
+    select[multiple] {
+      height: 120px;
+    }
+
+    .form-group > div {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    button {
+      background-color: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #ffffff);
+      border: none;
+      border-radius: var(--mdc-shape-small, 4px);
+      padding: 8px 16px;
+      font-size: var(--mdc-typography-button-font-size, 14px);
+      font-weight: 500;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: background-color 0.2s;
+    }
+
+    button:hover {
+      filter: brightness(110%);
+    }
+
+    .form-group > div > button {
+      background-color: var(--error-color, #f44336);
+      padding: 8px 12px;
     }
   `;
 
@@ -80,9 +165,19 @@ class ConfigPage extends LitElement {
       <form @submit="${e => { e.preventDefault(); this.saveConfig(); }}">
 
         <div class="form-group">
-          <label>Master Toggle (input_boolean)</label>
+          <label>Master Toggle</label>
+          <span class="hint">Create an <b>input_boolean</b> (Toggle) helper in <a href="/config/helpers" target="_top">Settings > Devices & Services > Helpers</a>.</span>
           <select .value="${this.config.master}" @change="${e => this.handleSelect(e, 'master')}">
             <option value="">-- Select --</option>
+            ${this.getOptions('input_boolean')}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Guest Mode Toggle</label>
+          <span class="hint">Create an <b>input_boolean</b> (Toggle) helper in <a href="/config/helpers" target="_top">Settings > Devices & Services > Helpers</a>.</span>
+          <select .value="${this.config.guest}" @change="${e => this.handleSelect(e, 'guest')}">
+            <option value="">-- None --</option>
             ${this.getOptions('input_boolean')}
           </select>
         </div>
@@ -96,15 +191,8 @@ class ConfigPage extends LitElement {
         </div>
 
         <div class="form-group">
-          <label>Guest Mode Toggle (Optional)</label>
-          <select .value="${this.config.guest}" @change="${e => this.handleSelect(e, 'guest')}">
-            <option value="">-- None --</option>
-            ${this.getOptions('input_boolean')}
-          </select>
-        </div>
-
-        <div class="form-group">
           <label>Climate Entities (ACs)</label>
+          <span class="hint">Hold <b>Ctrl</b> (or <b>Cmd</b> on Mac) to select multiple entities.</span>
           <select multiple @change="${e => this.handleMultiSelect(e, 'acs')}">
             ${this.entities.filter(e => e.entity_id.startsWith('climate')).map(e => html`
               <option value="${e.entity_id}" ?selected="${this.config.acs.includes(e.entity_id)}">
@@ -116,6 +204,7 @@ class ConfigPage extends LitElement {
 
         <div class="form-group">
           <label>Window/Door Sensors</label>
+          <span class="hint">Hold <b>Ctrl</b> (or <b>Cmd</b> on Mac) to select multiple entities.</span>
           <select multiple @change="${e => this.handleMultiSelect(e, 'windows')}">
             ${this.entities.filter(e => e.entity_id.startsWith('binary_sensor')).map(e => html`
               <option value="${e.entity_id}" ?selected="${this.config.windows.includes(e.entity_id)}">
