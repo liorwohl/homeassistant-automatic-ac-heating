@@ -1,4 +1,5 @@
 {
   "name": "Homeassistant Automatic AC Heating",
-  "url": "https://github.com/liorwohl/homeassistant-automatic-ac-heating"
+  "url": "https://github.com/liorwohl/homeassistant-automatic-ac-heating",
+  "maintainer": "Lior Wohl <liorwohl@gmail.com>"
 }

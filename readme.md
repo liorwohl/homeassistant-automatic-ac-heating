@@ -1,10 +1,10 @@
 # Automatic AC & Heating Scheduler for Home Assistant
 
-A smart, set-and-forget climate scheduler for Home Assistant. This add-on gives you a simple web interface to schedule your AC and heating, while automatically turning them off if you leave a window open or leave the house.
+A smart, set-and-forget climate scheduler for Home Assistant. This app gives you a simple web interface to schedule your AC and heating, while automatically turning them off if you leave a window open or leave the house.
 
 ## Why use this?
 
-Instead of building complex Home Assistant automations for every scenario, this add-on handles the heavy lifting in one place:
+Instead of building complex Home Assistant automations for every scenario, this app handles the heavy lifting in one place:
 
 * **Save Energy:** Automatically turns off the AC/Heater if a window or door is left open.
 
@@ -16,13 +16,13 @@ Instead of building complex Home Assistant automations for every scenario, this 
 
 ## Installation
 
-1. Open your Home Assistant and go to **Settings** > **Add-ons** > **Add-on Store**.
+1. Open your Home Assistant and go to **Settings** > **Apps** > **App Store**.
 
 2. Click the three dots (`...`) in the top right corner and select **Repositories**.
 
 3. Paste this URL and click **Add**: `https://github.com/liorwohl/homeassistant-automatic-ac-heating`
 
-4. Close the modal, scroll down to **My Custom Add-ons** (or search for "Automatic AC Heating"), and click it.
+4. Close the modal, scroll down to **My Custom Apps** (or search for "Automatic AC Heating"), and click it.
 
 5. Click **Install**.
 
