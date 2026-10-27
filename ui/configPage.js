@@ -170,8 +170,13 @@ class ConfigPage extends LitElement {
     this.requestUpdate();
   }
 
-  async saveConfig() {
+  sortBlocks() {
     this.config.schedule.sort((a, b) => a.time.localeCompare(b.time));
+    this.requestUpdate();
+  }
+
+  async saveConfig() {
+    this.sortBlocks();
     await fetch('api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -239,10 +244,23 @@ class ConfigPage extends LitElement {
 
         <div class="form-group">
           <h3>Schedule Blocks</h3>
+          <span class="hint">Blocks are automatically sorted by time. Order does not matter.</span>
           ${this.config.schedule.map((block, i) => html`
             <div>
-              <input type="time" .value="${block.time}" @change="${e => this.updateBlock(i, 'time', e.target.value)}">
-              <input type="number" .value="${block.temp}" step="0.5" min="17" max="30" @change="${e => this.updateBlock(i, 'temp', e.target.value)}">
+              <input 
+                type="time" 
+                .value="${block.time}" 
+                @change="${e => this.updateBlock(i, 'time', e.target.value)}" 
+                @blur="${this.sortBlocks}"
+              >
+              <input 
+                type="number" 
+                .value="${block.temp}" 
+                step="0.5" 
+                min="17" 
+                max="30" 
+                @change="${e => this.updateBlock(i, 'temp', e.target.value)}"
+              >
               <select .value="${block.mode}" @change="${e => this.updateBlock(i, 'mode', e.target.value)}">
                 <option value="heat">Heat</option>
                 <option value="cool">Cool</option>

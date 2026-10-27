@@ -1,6 +1,6 @@
 {
   "name": "homeassistant-automatic-ac-heating",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "main": "index.js",
   "scripts": {
     "build": "webpack --mode production",
