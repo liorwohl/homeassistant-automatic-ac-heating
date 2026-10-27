@@ -1,5 +1,5 @@
 name: "Homeassistant Automatic AC Heating"
-version: "1.0.0"
+version: "1.0.1"
 slug: "homeassistant_automatic_ac_heating"
 description: "AC schedule manager for homeassistant"
 arch: ["aarch64", "amd64", "armv7"]
