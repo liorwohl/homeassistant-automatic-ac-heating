@@ -13,6 +13,9 @@ const token = process.env.SUPERVISOR_TOKEN;
 let config = { acs: [], windows: [], master: "", guest: "", zone: "zone.home", schedule: [] };
 let states = {};
 let msgId = 1;
+let getConfigId = null;
+let getStatesId = null;
+let haTimeZone = 'UTC'; // Fallback until synced
 
 if (fs.existsSync(DATA_FILE)) config = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 
@@ -33,8 +36,13 @@ function evaluateLogic(ws) {
   const openWindows = config.windows.filter(w => states[w]?.state === 'on');
   const anyWindowOpen = openWindows.length > 0;
 
-  const now = new Date();
-  const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+  // Use Home Assistant's exact timezone instead of the Docker container's UTC clock
+  const timeStr = new Date().toLocaleTimeString('en-GB', {
+    timeZone: haTimeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  });
   
   let target = config.schedule[config.schedule.length - 1]; 
   for (const block of config.schedule) {
@@ -91,14 +99,29 @@ ws.on('message', (data) => {
   const msg = JSON.parse(data);
   
   if (msg.type === 'auth_ok') {
-    ws.send(JSON.stringify({ id: msgId++, type: 'get_states' }));
+    // 1. Fetch Home Assistant's local timezone
+    getConfigId = msgId++;
+    ws.send(JSON.stringify({ id: getConfigId, type: 'get_config' }));
+    
+    // 2. Fetch all entity states
+    getStatesId = msgId++;
+    ws.send(JSON.stringify({ id: getStatesId, type: 'get_states' }));
+    
+    // 3. Subscribe to live updates
     ws.send(JSON.stringify({ id: msgId++, type: 'subscribe_events', event_type: 'state_changed' }));
+    
     setInterval(() => evaluateLogic(ws), 60000);
   }
   
-  if (msg.type === 'result' && Array.isArray(msg.result)) {
-    msg.result.forEach(e => { states[e.entity_id] = e; });
-    evaluateLogic(ws);
+  if (msg.type === 'result') {
+    if (msg.id === getConfigId && msg.result && msg.result.time_zone) {
+      haTimeZone = msg.result.time_zone;
+      console.log('Synced timezone with Home Assistant:', haTimeZone);
+    }
+    if (msg.id === getStatesId && Array.isArray(msg.result)) {
+      msg.result.forEach(e => { states[e.entity_id] = e; });
+      evaluateLogic(ws);
+    }
   }
 
   if (msg.type === 'event' && msg.event.event_type === 'state_changed') {
@@ -116,7 +139,7 @@ app.get('/api/config', (req, res) => res.json(config));
 app.post('/api/config', (req, res) => {
   config = req.body;
   fs.writeFileSync(DATA_FILE, JSON.stringify(config, null, 2));
-  evaluateLogic(ws);
+  evaluateLogic(ws); // Instantly triggers schedule update on save
   res.json({ success: true });
 });
 
