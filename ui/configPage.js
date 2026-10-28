@@ -3,121 +3,121 @@ import { LitElement, html, css } from 'lit';
 class ConfigPage extends LitElement {
   static styles = css`
     :host {
-      /* Light Mode */
-      --app-card-bg: #ffffff;
-      --app-text: #212121;
-      --app-text-sec: #727272;
-      --app-border: #e0e0e0;
-      --app-primary: #03a9f4;
-      --app-error: #f44336;
-    }
+      /* Light Mode Defaults */
+      --card-background: #ffffff;
+      --text-main: #212121;
+      --text-muted: #727272;
+      --border-color: #e0e0e0;
+      --accent-color: #03a9f4;
+      --danger-color: #f44336;
+      --button-text-color: #ffffff;
 
-    /* Dark Mode */
-    @media (prefers-color-scheme: dark) {
-      :host {
-        --app-card-bg: #1c1c1c;
-        --app-text: #e1e1e1;
-        --app-text-sec: #9b9b9b;
-        --app-border: #444444;
-        --app-primary: #03a9f4;
-        --app-error: #f44336;
+      /* Dark Mode Overrides */
+      @media (prefers-color-scheme: dark) {
+        --card-background: #1c1c1c;
+        --text-main: #e1e1e1;
+        --text-muted: #9b9b9b;
+        --border-color: #444444;
       }
-    }
 
-    :host {
       display: block;
-      color: var(--app-text);
+      color: var(--text-main);
       font-family: Roboto, sans-serif;
-      padding: 16px;
-      max-width: 800px;
+      font-size: 14px;
+      max-width: 57rem;
       margin: 0 auto;
     }
 
     h2 {
-      color: var(--app-text);
-      font-size: 24px;
-      margin-bottom: 24px;
+      color: var(--text-main);
+      font-size: 1.75rem;
+      margin-bottom: 1.5rem;
     }
 
     .form-group {
-      background: var(--app-card-bg);
-      padding: 16px;
-      margin-bottom: 16px;
-      border-radius: 12px;
+      background: var(--card-background);
+      padding: 1.15rem;
+      margin-bottom: 1.15rem;
+      border-radius: 0.75rem;
       box-shadow: 0px 2px 1px -1px rgba(0, 0, 0, 0.2), 0px 1px 1px 0px rgba(0, 0, 0, 0.14), 0px 1px 3px 0px rgba(0, 0, 0, 0.12);
     }
 
     label, h3 {
       display: block;
-      color: var(--app-text);
-      font-size: 16px;
-      font-weight: 400;
-      margin: 0 0 4px 0;
+      color: var(--text-main);
+      font-size: 1.15rem;
+      font-weight: 500;
+      margin: 0 0 0.25rem 0;
     }
 
     .hint {
       display: block;
-      color: var(--app-text-sec);
-      font-size: 12px;
-      margin-bottom: 8px;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-bottom: 0.5rem;
+
+      & a {
+        color: var(--accent-color);
+        text-decoration: none;
+
+        &:hover {
+          text-decoration: underline;
+        }
+      }
     }
 
-    .hint a {
-      color: var(--app-primary);
-      text-decoration: none;
-    }
-
-    .hint a:hover {
-      text-decoration: underline;
-    }
-
-    select, input {
-      padding: 8px 12px;
-      border: 1px solid var(--app-border);
-      border-radius: 4px;
-      background-color: var(--app-card-bg);
-      color: var(--app-text);
-      font-size: 16px;
+    select, input:not([type="checkbox"]) {
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.25rem;
+      background-color: var(--card-background);
+      color: var(--text-main);
+      font-size: 1rem;
       outline: none;
       color-scheme: light dark; 
-    }
-    
-    select:focus, input:focus {
-      border-color: var(--app-primary);
+
+      &:focus {
+        border-color: var(--accent-color);
+      }
     }
 
     select[multiple] {
-      height: 120px;
+      height: 8.5rem;
     }
 
-    .form-group > div {
+    .schedule-row {
       display: flex;
-      gap: 12px;
-      margin-bottom: 12px;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
       align-items: center;
       flex-wrap: wrap;
     }
 
+    .checkbox-label {
+      cursor: pointer;
+      margin-left: 0.5rem;
+    }
+
     button {
-      background-color: var(--app-primary);
-      color: #ffffff;
+      background-color: var(--accent-color);
+      color: var(--button-text-color);
       border: none;
-      border-radius: 4px;
-      padding: 8px 16px;
-      font-size: 14px;
+      border-radius: 0.25rem;
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
       font-weight: 500;
       cursor: pointer;
       text-transform: uppercase;
       transition: background-color 0.2s;
-    }
 
-    button:hover {
-      filter: brightness(110%);
-    }
+      &:hover {
+        filter: brightness(110%);
+      }
 
-    .form-group > div > button {
-      background-color: var(--app-error);
-      padding: 8px 12px;
+      &.delete-button {
+        background-color: var(--danger-color);
+        padding: 0.5rem 0.75rem;
+      }
     }
   `;
 
@@ -156,7 +156,7 @@ class ConfigPage extends LitElement {
   }
 
   addBlock() {
-    this.config.schedule = [...this.config.schedule, { time: '07:00', temp: 22, mode: 'heat' }];
+    this.config.schedule = [...this.config.schedule, { time: '07:00', temp: 22, mode: 'heat', fan: 'auto', led: true }];
     this.requestUpdate();
   }
 
@@ -246,7 +246,7 @@ class ConfigPage extends LitElement {
           <h3>Schedule Blocks</h3>
           <span class="hint">Blocks are automatically sorted by time. Order does not matter.</span>
           ${this.config.schedule.map((block, i) => html`
-            <div>
+            <div class="schedule-row">
               <input 
                 type="time" 
                 .value="${block.time}" 
@@ -267,7 +267,21 @@ class ConfigPage extends LitElement {
                 <option value="dry">Dry</option>
                 <option value="off">Off</option>
               </select>
-              <button type="button" @click="${() => this.removeBlock(i)}">X</button>
+              <select .value="${block.fan || 'auto'}" @change="${e => this.updateBlock(i, 'fan', e.target.value)}">
+                <option value="auto">Auto</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="quiet">Quiet</option>
+              </select>
+              <label class="checkbox-label" title="Toggle AC Display LED">
+                <input 
+                  type="checkbox" 
+                  .checked="${block.led !== false}" 
+                  @change="${e => this.updateBlock(i, 'led', e.target.checked)}"
+                > LED
+              </label>
+              <button type="button" class="delete-button" @click="${() => this.removeBlock(i)}">X</button>
             </div>
           `)}
           <button type="button" @click="${this.addBlock}">+ Add Time Block</button>
