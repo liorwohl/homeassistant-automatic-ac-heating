@@ -15,17 +15,25 @@ let states = {};
 let msgId = 1;
 let getConfigId = null;
 let getStatesId = null;
-let haTimeZone = 'UTC'; // Fallback until synced
+let haTimeZone = 'UTC';
+let evaluateTimeout = null;
 
 if (fs.existsSync(DATA_FILE)) config = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 
 // --- Automation Logic Engine ---
+
+/**
+ * Sends a service call payload over the Home Assistant WebSocket connection.
+ */
 function callService(ws, domain, service, entityIds, data = {}) {
   const payload = { id: msgId++, type: 'call_service', domain, service, service_data: data };
   if (entityIds && entityIds.length > 0) Object.assign(payload, { target: { entity_id: entityIds } });
   ws.send(JSON.stringify(payload));
 }
 
+/**
+ * Core rules engine. Evaluates presence, window sensors, and schedules to determine required AC states.
+ */
 function evaluateLogic(ws) {
   if (!config.master || !states[config.master] || states[config.master].state !== 'on') return;
 
@@ -36,7 +44,7 @@ function evaluateLogic(ws) {
   const openWindows = config.windows.filter(w => states[w]?.state === 'on');
   const anyWindowOpen = openWindows.length > 0;
 
-  // Use Home Assistant's exact timezone instead of the Docker container's UTC clock
+  // Resolve current time using Home Assistant's timezone to prevent Docker UTC offsets
   const timeStr = new Date().toLocaleTimeString('en-GB', {
     timeZone: haTimeZone,
     hour: '2-digit',
@@ -44,21 +52,23 @@ function evaluateLogic(ws) {
     hourCycle: 'h23'
   });
   
+  // Determine the active schedule block based on the current time
   let target = config.schedule[config.schedule.length - 1]; 
   for (const block of config.schedule) {
     if (block.time <= timeStr) target = block;
   }
 
-  const isAnyAcOn = config.acs.some(ac => states[ac]?.state !== 'off');
-
-  // Scenarios 1, 2 & 3: Shutdown Conditions
+  // Evaluate shutdown conditions: empty house, scheduled off period, or open windows
   if (!isHome || target.mode === 'off' || anyWindowOpen) {
-    if (isAnyAcOn) {
+    // Filter ACs to only send turn_off commands to units currently active
+    const activeAcs = config.acs.filter(ac => states[ac]?.state !== 'off');
+    
+    if (activeAcs.length > 0) {
       const reason = !isHome ? 'House is empty'
                    : target.mode === 'off' ? 'Scheduled off period'
                    : `Open window(s): ${openWindows.map(w => states[w].attributes.friendly_name || w).join(', ')}`;
 
-      callService(ws, 'climate', 'turn_off', config.acs);
+      callService(ws, 'climate', 'turn_off', activeAcs);
       callService(ws, 'notify', 'notify', null, {
         title: `🛑 Turning OFF the AC (${timeStr})`,
         message: `Reason: ${reason}`
@@ -67,28 +77,28 @@ function evaluateLogic(ws) {
     return;
   }
 
-  // Scenario 4: Resume Schedule
-  const needsUpdate = config.acs.some(ac => {
+  // Evaluate target state and filter ACs that diverge from the scheduled mode or temperature
+  const acsToUpdate = config.acs.filter(ac => {
     const s = states[ac];
     return !s || s.state !== target.mode || s.attributes.temperature !== target.temp;
   });
 
-  if (needsUpdate) {
-    callService(ws, 'climate', 'set_temperature', config.acs, {
+  if (acsToUpdate.length > 0) {
+    callService(ws, 'climate', 'set_temperature', acsToUpdate, {
       temperature: target.temp,
       hvac_mode: target.mode
     });
     
-    if (!isAnyAcOn) {
-      callService(ws, 'notify', 'notify', null, {
-        title: `🌡️ Turning AC to ${target.mode.toUpperCase()} (${timeStr})`,
-        message: 'Reason: Resuming schedule'
-      });
-    }
+    // Notify on any schedule transition or temperature adjustment
+    callService(ws, 'notify', 'notify', null, {
+      title: `🌡️ AC set to ${target.mode.toUpperCase()} at ${target.temp}°C (${timeStr})`,
+      message: 'Reason: Schedule update'
+    });
   }
 }
 
 // --- WebSocket Connection ---
+
 const ws = new WebSocket('ws://supervisor/core/websocket');
 
 ws.on('open', () => {
@@ -99,15 +109,12 @@ ws.on('message', (data) => {
   const msg = JSON.parse(data);
   
   if (msg.type === 'auth_ok') {
-    // 1. Fetch Home Assistant's local timezone
     getConfigId = msgId++;
     ws.send(JSON.stringify({ id: getConfigId, type: 'get_config' }));
     
-    // 2. Fetch all entity states
     getStatesId = msgId++;
     ws.send(JSON.stringify({ id: getStatesId, type: 'get_states' }));
     
-    // 3. Subscribe to live updates
     ws.send(JSON.stringify({ id: msgId++, type: 'subscribe_events', event_type: 'state_changed' }));
     
     setInterval(() => evaluateLogic(ws), 60000);
@@ -116,7 +123,6 @@ ws.on('message', (data) => {
   if (msg.type === 'result') {
     if (msg.id === getConfigId && msg.result && msg.result.time_zone) {
       haTimeZone = msg.result.time_zone;
-      console.log('Synced timezone with Home Assistant:', haTimeZone);
     }
     if (msg.id === getStatesId && Array.isArray(msg.result)) {
       msg.result.forEach(e => { states[e.entity_id] = e; });
@@ -129,17 +135,22 @@ ws.on('message', (data) => {
     states[entityId] = msg.event.data.new_state;
     
     const relevant = [config.master, config.guest, config.zone, ...config.acs, ...config.windows];
-    if (relevant.includes(entityId)) evaluateLogic(ws);
+    if (relevant.includes(entityId)) {
+      // Debounce rapid state changes to prevent event cascades and redundant service calls
+      clearTimeout(evaluateTimeout);
+      evaluateTimeout = setTimeout(() => evaluateLogic(ws), 2000);
+    }
   }
 });
 
 // --- API Routes ---
+
 app.get('/api/entities', (req, res) => res.json(Object.values(states)));
 app.get('/api/config', (req, res) => res.json(config));
 app.post('/api/config', (req, res) => {
   config = req.body;
   fs.writeFileSync(DATA_FILE, JSON.stringify(config, null, 2));
-  evaluateLogic(ws); // Instantly triggers schedule update on save
+  evaluateLogic(ws);
   res.json({ success: true });
 });
 
