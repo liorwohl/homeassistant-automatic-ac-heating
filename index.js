@@ -18,6 +18,9 @@ let getStatesId = null;
 let haTimeZone = 'UTC';
 let evaluateTimeout = null;
 
+// Memory tracker to prevent offline notification spam every 60 seconds
+let offlineNotified = new Set(); 
+
 if (fs.existsSync(DATA_FILE)) config = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 
 // --- Automation Logic Engine ---
@@ -60,8 +63,11 @@ function evaluateLogic(ws) {
 
   // Evaluate shutdown conditions: empty house, scheduled off period, or open windows
   if (!isHome || target.mode === 'off' || anyWindowOpen) {
-    // Filter ACs to only send turn_off commands to units currently active
-    const activeAcs = config.acs.filter(ac => states[ac]?.state !== 'off');
+    // Filter ACs to only send turn_off commands to units genuinely active (ignoring offline/unknown units)
+    const activeAcs = config.acs.filter(ac => {
+      const state = states[ac]?.state;
+      return state && !['off', 'unavailable', 'unknown'].includes(state);
+    });
     
     if (activeAcs.length > 0) {
       const reason = !isHome ? 'House is empty'
@@ -77,22 +83,75 @@ function evaluateLogic(ws) {
     return;
   }
 
-  // Evaluate target state and filter ACs that diverge from the scheduled mode or temperature
-  const acsToUpdate = config.acs.filter(ac => {
+  // Evaluate target state and sort ACs into "needs update" or "offline warning"
+  const acsToUpdate = [];
+  const offlineAcsToWarn = [];
+
+  config.acs.forEach(ac => {
     const s = states[ac];
-    return !s || s.state !== target.mode || s.attributes.temperature !== target.temp;
+    
+    // Check if the AC is dead/offline
+    if (!s || ['unavailable', 'unknown'].includes(s.state)) {
+      if (!offlineNotified.has(ac)) {
+        offlineAcsToWarn.push(ac);
+        offlineNotified.add(ac); // Log it so we don't spam the warning next minute
+      }
+      return; // Skip sending standard climate commands to a dead unit
+    }
+
+    // If it made it here, the AC is online. Clear the offline memory so it can warn again if it drops later.
+    offlineNotified.delete(ac);
+    
+    // SHORT-CIRCUIT: If the AC is off but should be on (or vice versa), flag it immediately.
+    if (s.state !== target.mode) {
+      acsToUpdate.push(ac);
+      return;
+    }
+    
+    // Safe float comparison to prevent HA String vs Number false mismatches
+    const currentTemp = parseFloat(s.attributes.temperature);
+    const targetTemp = parseFloat(target.temp);
+    
+    // Check if the fan speed diverges from the schedule
+    const fanMismatch = target.fan && s.attributes.fan_mode !== target.fan;
+    
+    if (currentTemp !== targetTemp || fanMismatch) {
+      acsToUpdate.push(ac);
+    }
   });
 
+  // Execute standard AC adjustments
   if (acsToUpdate.length > 0) {
+    // Command 1: Temperature & Mode (Executes Immediately)
     callService(ws, 'climate', 'set_temperature', acsToUpdate, {
       temperature: target.temp,
       hvac_mode: target.mode
     });
-    
-    // Notify on any schedule transition or temperature adjustment
+
+    // Command 2: Fan Speed (Executes after 3 seconds)
+    if (target.fan) {
+      // 3-second stagger to prevent dropped commands on Midea hardware
+      setTimeout(() => {
+        callService(ws, 'climate', 'set_fan_mode', acsToUpdate, {
+          fan_mode: target.fan
+        });
+      }, 3000);
+    }
+
+    // Notify on any schedule transition or temperature/fan adjustment
     callService(ws, 'notify', 'notify', null, {
       title: `🌡️ AC set to ${target.mode.toUpperCase()} at ${target.temp}°C (${timeStr})`,
-      message: 'Reason: Schedule update'
+      message: 'Reason: Schedule enforced'
+    });
+  }
+
+  // Execute Offline Warnings
+  if (offlineAcsToWarn.length > 0) {
+    const deadNames = offlineAcsToWarn.map(ac => states[ac]?.attributes?.friendly_name || ac).join(', ');
+    
+    callService(ws, 'notify', 'notify', null, {
+      title: `⚠️ AC Offline Warning (${timeStr})`,
+      message: `Could not enforce the schedule because these AC units are unavailable/offline: ${deadNames}`
     });
   }
 }
