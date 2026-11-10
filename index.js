@@ -17,6 +17,8 @@ let getConfigId = null;
 let getStatesId = null;
 let haTimeZone = 'UTC';
 let evaluateTimeout = null;
+let ws = null;
+let reconnectTimer = null;
 
 // Memory tracker to prevent offline notification spam every 60 seconds
 let offlineNotified = new Set(); 
@@ -29,8 +31,13 @@ if (fs.existsSync(DATA_FILE)) config = JSON.parse(fs.readFileSync(DATA_FILE, 'ut
  * Sends a service call payload over the Home Assistant WebSocket connection.
  */
 function callService(ws, domain, service, entityIds, data = {}) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    console.error(`[ERROR] Cannot send ${domain}.${service} - WebSocket is disconnected!`);
+    return;
+  }
   const payload = { id: msgId++, type: 'call_service', domain, service, service_data: data };
   if (entityIds && entityIds.length > 0) Object.assign(payload, { target: { entity_id: entityIds } });
+  console.log(`[ACTION] Calling ${domain}.${service} on ${entityIds ? entityIds.join(', ') : 'all'}`);
   ws.send(JSON.stringify(payload));
 }
 
@@ -156,51 +163,77 @@ function evaluateLogic(ws) {
   }
 }
 
-// --- WebSocket Connection ---
+// --- Resilient WebSocket Connection ---
 
-const ws = new WebSocket('ws://supervisor/core/websocket');
+function connectWebSocket() {
+  console.log('[WS] Attempting connection to Home Assistant...');
+  ws = new WebSocket('ws://supervisor/core/websocket');
 
-ws.on('open', () => {
-  ws.send(JSON.stringify({ type: 'auth', access_token: token }));
-});
+  ws.on('open', () => {
+    console.log('[WS] Connected! Sending authentication token...');
+    ws.send(JSON.stringify({ type: 'auth', access_token: token }));
+    if (reconnectTimer) clearInterval(reconnectTimer);
+  });
 
-ws.on('message', (data) => {
-  const msg = JSON.parse(data);
-  
-  if (msg.type === 'auth_ok') {
-    getConfigId = msgId++;
-    ws.send(JSON.stringify({ id: getConfigId, type: 'get_config' }));
+  ws.on('message', (data) => {
+    const msg = JSON.parse(data);
     
-    getStatesId = msgId++;
-    ws.send(JSON.stringify({ id: getStatesId, type: 'get_states' }));
-    
-    ws.send(JSON.stringify({ id: msgId++, type: 'subscribe_events', event_type: 'state_changed' }));
-    
-    setInterval(() => evaluateLogic(ws), 60000);
-  }
-  
-  if (msg.type === 'result') {
-    if (msg.id === getConfigId && msg.result && msg.result.time_zone) {
-      haTimeZone = msg.result.time_zone;
+    if (msg.type === 'auth_invalid') {
+      console.error('[WS ERROR] Authentication failed! Check supervisor token permissions.');
     }
-    if (msg.id === getStatesId && Array.isArray(msg.result)) {
-      msg.result.forEach(e => { states[e.entity_id] = e; });
-      evaluateLogic(ws);
-    }
-  }
 
-  if (msg.type === 'event' && msg.event.event_type === 'state_changed') {
-    const entityId = msg.event.data.entity_id;
-    states[entityId] = msg.event.data.new_state;
-    
-    const relevant = [config.master, config.guest, config.zone, ...config.acs, ...config.windows];
-    if (relevant.includes(entityId)) {
-      // Debounce rapid state changes to prevent event cascades and redundant service calls
-      clearTimeout(evaluateTimeout);
-      evaluateTimeout = setTimeout(() => evaluateLogic(ws), 2000);
+    if (msg.type === 'auth_ok') {
+      console.log('[WS] Authenticated successfully. Fetching states and subscribing to events...');
+      getConfigId = msgId++;
+      ws.send(JSON.stringify({ id: getConfigId, type: 'get_config' }));
+      
+      getStatesId = msgId++;
+      ws.send(JSON.stringify({ id: getStatesId, type: 'get_states' }));
+      
+      ws.send(JSON.stringify({ id: msgId++, type: 'subscribe_events', event_type: 'state_changed' }));
     }
-  }
-});
+    
+    if (msg.type === 'result') {
+      if (msg.id === getConfigId && msg.result && msg.result.time_zone) {
+        haTimeZone = msg.result.time_zone;
+      }
+      if (msg.id === getStatesId && Array.isArray(msg.result)) {
+        msg.result.forEach(e => { states[e.entity_id] = e; });
+        console.log(`[WS] Loaded initial states for ${msg.result.length} entities.`);
+        evaluateLogic(ws);
+      }
+    }
+
+    if (msg.type === 'event' && msg.event.event_type === 'state_changed') {
+      const entityId = msg.event.data.entity_id;
+      states[entityId] = msg.event.data.new_state;
+      
+      const relevant = [config.master, config.guest, config.zone, ...config.acs, ...config.windows];
+      if (relevant.includes(entityId)) {
+        console.log(`[EVENT] Monitored entity changed: ${entityId} -> ${states[entityId].state}`);
+        clearTimeout(evaluateTimeout);
+        evaluateTimeout = setTimeout(() => evaluateLogic(ws), 2000);
+      }
+    }
+  });
+
+  ws.on('error', (err) => {
+    console.error('[WS ERROR]', err.message);
+  });
+
+  ws.on('close', (code, reason) => {
+    console.log(`[WS] Connection closed (${code}). Reconnecting in 5 seconds...`);
+    ws = null;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connectWebSocket, 5000);
+  });
+}
+
+// Start initial connection
+connectWebSocket();
+setInterval(() => {
+  if (ws && ws.readyState === WebSocket.OPEN) evaluateLogic(ws);
+}, 60000);
 
 // --- API Routes ---
 
@@ -209,9 +242,9 @@ app.get('/api/config', (req, res) => res.json(config));
 app.post('/api/config', (req, res) => {
   config = req.body;
   fs.writeFileSync(DATA_FILE, JSON.stringify(config, null, 2));
-  evaluateLogic(ws);
+  if (ws && ws.readyState === WebSocket.OPEN) evaluateLogic(ws);
   res.json({ success: true });
 });
 
 const port = process.env.SUPERVISOR_INGRESS_PORT || 8099;
-app.listen(port, () => console.log(`Listening on port ${port}`));
+app.listen(port, () => console.log(`[HTTP] Express Server listening on port ${port}`));
