@@ -390,12 +390,21 @@ setInterval(() => {
 // --- API Routes ---
 
 app.get('/api/entities', (req, res) => res.json(Object.values(states)));
+
 app.get('/api/config', (req, res) => res.json(config));
+
 app.post('/api/config', (req, res) => {
   config = req.body;
   config.acs = config.acs.filter(ac => ac.entity_id);
   fs.writeFileSync(DATA_FILE, JSON.stringify(config, null, 2));
   if (ws && ws.readyState === WebSocket.OPEN) evaluateLogic(ws);
+  res.json({ success: true });
+});
+
+app.post('/api/toggle_master', (req, res) => {
+  const { entity_id } = req.body;
+  if (!entity_id) return res.status(400).json({ error: 'entity_id is required' });
+  callService(ws, 'input_boolean', 'toggle', [entity_id]);
   res.json({ success: true });
 });
 

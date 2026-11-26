@@ -215,6 +215,15 @@ class ConfigPage extends LitElement {
     this.requestUpdate();
   }
 
+  async toggleMaster(entityId) {
+    if (!entityId) return;
+    await fetch('api/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entity_id: entityId })
+    });
+  }
+
   render() {
     const climates = this.entities.filter(e => e.entity_id.startsWith('climate.'));
     const tempSensors = this.entities.filter(e => e.entity_id.startsWith('sensor.') && e.attributes?.device_class === 'temperature');
@@ -228,10 +237,25 @@ class ConfigPage extends LitElement {
         <div class="form-group">
           <label>Master Toggle</label>
           <span class="hint">Create an <b>input_boolean</b> (Toggle) helper in <a href="/config/helpers" target="_top">Settings > Devices & Services > Helpers</a>.</span>
-          <select .value="${this.config.master}" @change="${e => this.handleSelect(e, 'master')}">
-            <option value="">-- Select --</option>
-            ${this.getOptions('input_boolean')}
-          </select>
+          
+          <div style="display:flex">
+
+            <select .value="${this.config.master}" @change="${e => this.handleSelect(e, 'master')}">
+              <option value="">-- Select --</option>
+              ${this.getOptions('input_boolean')}
+            </select>
+
+            <label>
+              Toggle Master Switch:
+              <input
+                type="checkbox"
+                ?disabled="${!this.config.master}"
+                .checked="${this.entities.find(e => e.entity_id === this.config.master)?.state === 'on'}"
+                @change="${() => this.toggleEntity(this.config.master)}"
+              />
+            </label>
+
+          </div>
         </div>
 
         <div class="form-group">
@@ -245,7 +269,7 @@ class ConfigPage extends LitElement {
 
         <div class="form-group">
           <label>Presence Zone</label>
-          <span class="hint">Choose your "Home" zone here</span>
+          <span class="hint">Choose your "Home" zone here, if you want the ACs to turn off when no one is at home.</span>
           <select .value="${this.config.zone}" @change="${e => this.handleSelect(e, 'zone')}">
             <option value="">-- Select --</option>
             ${this.getOptions('zone')}
