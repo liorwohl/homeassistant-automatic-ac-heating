@@ -40,6 +40,9 @@ function log(...args) {
 
 if (fs.existsSync(DATA_FILE)) {
   config = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  log('[CONFIG] Loaded:', JSON.stringify(config, null, 2));
+} else {
+  log('[CONFIG] No config file found, using defaults:', JSON.stringify(config, null, 2));
 }
 
 // --- Automation Logic Engine ---
@@ -447,7 +450,7 @@ app.post('/api/config', (req, res) => {
   config = req.body;
   config.acs = config.acs.filter(ac => ac.entity_id);
   fs.writeFileSync(DATA_FILE, JSON.stringify(config, null, 2));
-  log(`[API] Config saved (${config.acs.length} ACs, ${config.schedule.length} schedule blocks)`);
+  log(`[API] Config saved (${config.acs.length} ACs, ${config.schedule.length} schedule blocks):`, JSON.stringify(config, null, 2));
   if (ws && ws.readyState === WebSocket.OPEN) evaluateLogic(ws);
   res.json({ success: true });
 });
