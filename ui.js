@@ -107,8 +107,6 @@ class ConfigPage extends LitElement {
       font-size: 1rem;
       font-weight: 500;
       cursor: pointer;
-      text-transform: uppercase;
-      transition: background-color 0.2s;
 
       &:hover {
         filter: brightness(110%);
@@ -117,6 +115,12 @@ class ConfigPage extends LitElement {
       &.delete-button {
         background-color: var(--danger-color);
         padding: 0.5rem 0.75rem;
+      }
+
+      &:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        filter: none;
       }
     }
   `;
@@ -156,12 +160,21 @@ class ConfigPage extends LitElement {
     this.config = { ...this.config, [key]: e.target.value };
   }
 
+  isAcUsedInSchedule(entityId) {
+    return Boolean(entityId && this.config.schedule.some(b => b.ac === entityId));
+  }
+
   addAc() {
     this.config.acs = [...this.config.acs, { entity_id: '', temp_sensor: '' }];
     this.requestUpdate();
   }
 
   removeAc(index) {
+    const entityId = this.config.acs[index]?.entity_id;
+    if (this.isAcUsedInSchedule(entityId)) {
+      alert('This AC is used in a schedule block. Remove or reassign those schedule blocks first.');
+      return;
+    }
     this.config.acs = this.config.acs.filter((_, i) => i !== index);
     this.requestUpdate();
   }
@@ -172,7 +185,7 @@ class ConfigPage extends LitElement {
   }
 
   addBlock() {
-    this.config.schedule = [...this.config.schedule, { time: '07:00', temp: 22, mode: 'heat', fan: 'auto', led: true }];
+    this.config.schedule = [...this.config.schedule, { time: '07:00', ac: 'all', temp: 22, mode: 'heat', fan: 'auto', led: true }];
     this.requestUpdate();
   }
 
@@ -205,6 +218,7 @@ class ConfigPage extends LitElement {
   render() {
     const climates = this.entities.filter(e => e.entity_id.startsWith('climate.'));
     const tempSensors = this.entities.filter(e => e.entity_id.startsWith('sensor.') && e.attributes?.device_class === 'temperature');
+    const selectedAcs = this.config.acs.filter(ac => ac.entity_id);
 
     return html`
       <h2>Automatic AC Heating Configuration</h2>
@@ -231,6 +245,7 @@ class ConfigPage extends LitElement {
 
         <div class="form-group">
           <label>Presence Zone</label>
+          <span class="hint">Choose your "Home" zone here</span>
           <select .value="${this.config.zone}" @change="${e => this.handleSelect(e, 'zone')}">
             <option value="">-- Select --</option>
             ${this.getOptions('zone')}
@@ -239,28 +254,37 @@ class ConfigPage extends LitElement {
 
         <div class="form-group">
           <h3>Climate Entities (ACs)</h3>
-          <span class="hint">Optionally pair each AC with an external room temperature sensor for dynamic setpoint control.</span>
-          ${this.config.acs.map((ac, i) => html`
-            <div class="schedule-row">
-              <select @change="${e => this.updateAc(i, 'entity_id', e.target.value)}">
-                <option value="">-- Select AC --</option>
-                ${climates.map(e => html`
-                  <option value="${e.entity_id}" ?selected="${e.entity_id === ac.entity_id}">
-                    ${e.attributes.friendly_name || e.entity_id}
-                  </option>
-                `)}
-              </select>
-              <select @change="${e => this.updateAc(i, 'temp_sensor', e.target.value)}">
-                <option value="">-- No External Sensor --</option>
-                ${tempSensors.map(e => html`
-                  <option value="${e.entity_id}" ?selected="${e.entity_id === ac.temp_sensor}">
-                    ${e.attributes.friendly_name || e.entity_id}
-                  </option>
-                `)}
-              </select>
-              <button type="button" class="delete-button" @click="${() => this.removeAc(i)}">X</button>
-            </div>
-          `)}
+          <span class="hint">Optional: pair each AC with an external room temperature sensor. Built-in AC sensors read the unit's own airflow near the ceiling instead of the real room temperature. So when pairing with sensor, the app server will calculate the difference and dynamically shifts the AC's setpoint to hold your actual room target temperature by the external sensor.</span>
+          ${this.config.acs.map((ac, i) => {
+            const inUse = this.isAcUsedInSchedule(ac.entity_id);
+            return html`
+              <div class="schedule-row">
+                <select .value="${ac.entity_id || ''}" @change="${e => this.updateAc(i, 'entity_id', e.target.value)}">
+                  <option value="">-- Select AC --</option>
+                  ${climates.map(e => html`
+                    <option value="${e.entity_id}" ?selected="${e.entity_id === ac.entity_id}">
+                      ${e.attributes.friendly_name || e.entity_id}
+                    </option>
+                  `)}
+                </select>
+                <select .value="${ac.temp_sensor || ''}" @change="${e => this.updateAc(i, 'temp_sensor', e.target.value)}">
+                  <option value="">-- No External Sensor --</option>
+                  ${tempSensors.map(e => html`
+                    <option value="${e.entity_id}" ?selected="${e.entity_id === ac.temp_sensor}">
+                      ${e.attributes.friendly_name || e.entity_id}
+                    </option>
+                  `)}
+                </select>
+                <button
+                  type="button"
+                  class="delete-button"
+                  ?disabled="${inUse}"
+                  title="${inUse ? 'Used in schedule blocks' : 'Remove AC'}"
+                  @click="${() => this.removeAc(i)}"
+                >X</button>
+              </div>
+            `;
+          })}
           <button type="button" @click="${this.addAc}">+ Add AC</button>
         </div>
 
@@ -287,6 +311,17 @@ class ConfigPage extends LitElement {
                 @change="${e => this.updateBlock(i, 'time', e.target.value)}" 
                 @blur="${this.sortBlocks}"
               >
+              <select .value="${block.ac || 'all'}" @change="${e => this.updateBlock(i, 'ac', e.target.value)}">
+                <option value="all" ?selected="${(block.ac || 'all') === 'all'}">All</option>
+                ${selectedAcs.map(ac => {
+                  const entity = climates.find(e => e.entity_id === ac.entity_id);
+                  return html`
+                    <option value="${ac.entity_id}" ?selected="${block.ac === ac.entity_id}">
+                      ${entity?.attributes?.friendly_name || ac.entity_id}
+                    </option>
+                  `;
+                })}
+              </select>
               <input 
                 type="number" 
                 .value="${block.temp}" 

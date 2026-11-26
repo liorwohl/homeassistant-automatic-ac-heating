@@ -8,6 +8,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')));
 
 const DATA_FILE = '/data/config.json';
+const MAX_SENSOR_AGE_HOURS = 2;
 const token = process.env.SUPERVISOR_TOKEN;
 
 let config = { acs: [], windows: [], master: "", guest: "", zone: "zone.home", schedule: [] };
@@ -19,16 +20,16 @@ let haTimeZone = 'UTC';
 let evaluateTimeout = null;
 let ws = null;
 let reconnectTimer = null;
-let lastScheduleKey = null;
+let lastScheduleKeys = {};
 
 // Memory tracker to prevent offline notification spam every 60 seconds
 let offlineNotified = new Set(); 
 
-function normalizeConfig(cfg) {
-  cfg.acs = (cfg.acs || [])
+function normalizeConfig(savedConfig) {
+  savedConfig.acs = (savedConfig.acs || [])
     .map(ac => typeof ac === 'string' ? { entity_id: ac, temp_sensor: '' } : ac)
     .filter(ac => ac && ac.entity_id);
-  return cfg;
+  return savedConfig;
 }
 
 if (fs.existsSync(DATA_FILE)) {
@@ -57,7 +58,7 @@ function callService(ws, domain, service, entityIds, data = {}) {
 function ensureSilent(ws, acEntityIds) {
   const switchesToMute = acEntityIds
     .map(id => id.replace(/^climate\./, 'switch.').replace(/_climate$/, '') + '_prompt_tone')
-    .filter(sw => states[sw] && states[sw].state !== 'off');
+    .filter(switchId => states[switchId] && states[switchId].state !== 'off');
 
   if (switchesToMute.length > 0) {
     callService(ws, 'switch', 'turn_off', switchesToMute);
@@ -65,16 +66,64 @@ function ensureSilent(ws, acEntityIds) {
 }
 
 /**
+ * Returns an error string if the external room sensor is unavailable or stale, otherwise null.
+ */
+function getSensorError(sensorId) {
+  const sensor = states[sensorId];
+  const lastTimestamp = sensor?.last_reported || sensor?.last_updated;
+  // Convert millisecond difference to hours (60 min * 60 sec * 1000 ms)
+  const ageInHours = lastTimestamp ? (Date.now() - Date.parse(lastTimestamp)) / (60 * 60 * 1000) : Infinity;
+
+  if (sensor && !isNaN(parseFloat(sensor.state)) && ageInHours <= MAX_SENSOR_AGE_HOURS) return null;
+
+  const name = sensor?.attributes?.friendly_name || sensorId;
+  const lastUpdated = lastTimestamp
+    ? new Date(lastTimestamp).toLocaleString('en-GB', { timeZone: haTimeZone, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    : 'unknown';
+  const hoursAgo = isFinite(ageInHours) ? ageInHours.toFixed(1) : '?';
+
+  return `${name} (state: ${sensor?.state || 'missing'}, last update: ${lastUpdated}, ${hoursAgo}h ago)`;
+}
+
+/**
  * Calculates the dynamic setpoint using an external room sensor, or falls back to targetTemp.
  */
-function getEffectiveTemp(acObj, targetTemp) {
-  if (!acObj.temp_sensor) return targetTemp;
-  const roomTemp = parseFloat(states[acObj.temp_sensor]?.state);
-  const acInternal = parseFloat(states[acObj.entity_id]?.attributes?.current_temperature);
-  if (isNaN(roomTemp) || isNaN(acInternal)) return targetTemp;
+function getEffectiveTemp(acConfig, targetTemp, useSensor = true) {
+  const clampedTarget = Math.min(30, Math.max(17, targetTemp));
+  if (!acConfig.temp_sensor || !useSensor) return clampedTarget;
 
-  const raw = targetTemp + (acInternal - roomTemp);
-  return Math.min(30, Math.max(17, Math.round(raw * 2) / 2));
+  const attributes = states[acConfig.entity_id]?.attributes;
+  const roomTemp = parseFloat(states[acConfig.temp_sensor]?.state);
+  const acInternal = parseFloat(attributes?.current_temperature);
+  if (isNaN(roomTemp) || isNaN(acInternal)) return clampedTarget;
+
+  const step = parseFloat(attributes?.target_temp_step) || 0.5;
+  const currentTemp = parseFloat(attributes?.temperature);
+  const raw = Math.min(30, Math.max(17, targetTemp + (acInternal - roomTemp)));
+
+  // Deadband to prevent sensor flicker ping-ponging across rounding boundaries
+  if (!isNaN(currentTemp) && Math.abs(raw - currentTemp) < step * 0.8) {
+    return currentTemp;
+  }
+  return Number((Math.round(raw / step) * step).toFixed(1));
+}
+
+/**
+ * Determines the active schedule block for a specific AC based on the current time.
+ * Specific AC blocks take precedence over 'all' blocks at the exact same time.
+ */
+function getTargetBlock(acEntityId, timeStr) {
+  const matching = config.schedule.filter(block => !block.ac || block.ac === 'all' || block.ac === acEntityId);
+  if (!matching.length) return null;
+
+  const isSpecific = block => (block.ac && block.ac !== 'all') ? 1 : 0;
+  matching.sort((a, b) => a.time.localeCompare(b.time) || (isSpecific(a) - isSpecific(b)));
+
+  let target = matching[matching.length - 1];
+  for (const block of matching) {
+    if (block.time <= timeStr) target = block;
+  }
+  return target;
 }
 
 /**
@@ -98,16 +147,10 @@ function evaluateLogic(ws) {
     minute: '2-digit',
     hourCycle: 'h23'
   });
-  
-  // Determine the active schedule block based on the current time
-  let target = config.schedule[config.schedule.length - 1]; 
-  for (const block of config.schedule) {
-    if (block.time <= timeStr) target = block;
-  }
 
-  // Evaluate shutdown conditions: empty house, scheduled off period, or open windows
-  if (!isHome || target.mode === 'off' || anyWindowOpen) {
-    lastScheduleKey = null;
+  // Evaluate global shutdown conditions: empty house or open windows
+  if (!isHome || anyWindowOpen) {
+    lastScheduleKeys = {};
     // Filter ACs to only send turn_off commands to units genuinely active (ignoring offline/unknown units)
     const activeAcs = config.acs
       .map(ac => ac.entity_id)
@@ -118,7 +161,6 @@ function evaluateLogic(ws) {
     
     if (activeAcs.length > 0) {
       const reason = !isHome ? 'House is empty'
-                   : target.mode === 'off' ? 'Scheduled off period'
                    : `Open window(s): ${openWindows.map(w => states[w].attributes.friendly_name || w).join(', ')}`;
 
       ensureSilent(ws, activeAcs);
@@ -131,13 +173,18 @@ function evaluateLogic(ws) {
     return;
   }
 
-  // Evaluate target state and sort ACs into "needs update" or "offline warning"
+  // Evaluate target state and sort ACs into "needs update", "scheduled off", or "offline warning"
+  const acsToTurnOff = [];
   const tempUpdates = [];
   const fanUpdates = [];
+  const notifyUpdates = [];
   const offlineAcsToWarn = [];
-  let anyModeChanged = false;
+  const offlineSensorsToWarn = [];
 
   config.acs.forEach(ac => {
+    const target = getTargetBlock(ac.entity_id, timeStr);
+    if (!target) return;
+
     const s = states[ac.entity_id];
     
     // Check if the AC is dead/offline
@@ -152,13 +199,33 @@ function evaluateLogic(ws) {
     // If it made it here, the AC is online. Clear the offline memory so it can warn again if it drops later.
     offlineNotified.delete(ac.entity_id);
 
-    const effectiveTemp = getEffectiveTemp(ac, parseFloat(target.temp));
+    // Handle per-AC scheduled off period
+    if (target.mode === 'off') {
+      delete lastScheduleKeys[ac.entity_id];
+      if (s.state !== 'off') acsToTurnOff.push(ac.entity_id);
+      return;
+    }
+
+    // Check paired external room sensor health (unavailable or stale)
+    const sensorError = ac.temp_sensor ? getSensorError(ac.temp_sensor) : null;
+    if (sensorError) {
+      if (!offlineNotified.has(ac.temp_sensor)) {
+        offlineSensorsToWarn.push(sensorError);
+        offlineNotified.add(ac.temp_sensor);
+      }
+    } else if (ac.temp_sensor) {
+      offlineNotified.delete(ac.temp_sensor);
+    }
+
+    const effectiveTemp = getEffectiveTemp(ac, parseFloat(target.temp), !sensorError);
+    const scheduleKey = `${target.time}|${target.mode}|${target.temp}|${target.fan}`;
     
     // SHORT-CIRCUIT: If the AC is off but should be on (or vice versa), flag it immediately.
     if (s.state !== target.mode) {
-      anyModeChanged = true;
-      tempUpdates.push({ entity_id: ac.entity_id, temp: effectiveTemp });
-      if (target.fan) fanUpdates.push(ac.entity_id);
+      tempUpdates.push({ entity_id: ac.entity_id, temp: effectiveTemp, mode: target.mode });
+      if (target.fan) fanUpdates.push({ entity_id: ac.entity_id, fan: target.fan });
+      lastScheduleKeys[ac.entity_id] = scheduleKey;
+      notifyUpdates.push({ entity_id: ac.entity_id, target });
       return;
     }
     
@@ -167,25 +234,42 @@ function evaluateLogic(ws) {
     
     // Check if the fan speed diverges from the schedule
     const fanMismatch = target.fan && s.attributes.fan_mode !== target.fan;
+    const tempMismatch = currentTemp !== effectiveTemp;
+    const scheduleChanged = scheduleKey !== lastScheduleKeys[ac.entity_id];
+    lastScheduleKeys[ac.entity_id] = scheduleKey;
     
-    if (currentTemp !== effectiveTemp) {
-      tempUpdates.push({ entity_id: ac.entity_id, temp: effectiveTemp });
+    if (tempMismatch) {
+      tempUpdates.push({ entity_id: ac.entity_id, temp: effectiveTemp, mode: target.mode });
     }
     if (fanMismatch) {
-      fanUpdates.push(ac.entity_id);
+      fanUpdates.push({ entity_id: ac.entity_id, fan: target.fan });
+    }
+    if ((tempMismatch || fanMismatch) && scheduleChanged) {
+      notifyUpdates.push({ entity_id: ac.entity_id, target });
     }
   });
 
+  // Execute per-AC scheduled turn_off commands
+  if (acsToTurnOff.length > 0) {
+    ensureSilent(ws, acsToTurnOff);
+    callService(ws, 'climate', 'turn_off', acsToTurnOff);
+    const names = acsToTurnOff.map(id => states[id]?.attributes?.friendly_name || id).join(', ');
+    callService(ws, 'notify', 'notify', null, {
+      title: `🛑 Turning OFF ${names} (${timeStr})`,
+      message: 'Reason: Scheduled off period'
+    });
+  }
+
   // Execute standard AC adjustments
-  const allUpdateIds = [...new Set([...tempUpdates.map(a => a.entity_id), ...fanUpdates])];
+  const allUpdateIds = [...new Set([...tempUpdates.map(a => a.entity_id), ...fanUpdates.map(a => a.entity_id)])];
   if (allUpdateIds.length > 0) {
     ensureSilent(ws, allUpdateIds);
 
     // Command 1: Temperature & Mode (Executes Immediately per AC for dynamic setpoint)
-    tempUpdates.forEach(({ entity_id, temp }) => {
+    tempUpdates.forEach(({ entity_id, temp, mode }) => {
       callService(ws, 'climate', 'set_temperature', [entity_id], {
         temperature: temp,
-        hvac_mode: target.mode
+        hvac_mode: mode
       });
     });
 
@@ -193,19 +277,22 @@ function evaluateLogic(ws) {
     if (fanUpdates.length > 0) {
       // 3-second stagger to prevent dropped commands on Midea hardware
       setTimeout(() => {
-        callService(ws, 'climate', 'set_fan_mode', fanUpdates, {
-          fan_mode: target.fan
+        fanUpdates.forEach(({ entity_id, fan }) => {
+          callService(ws, 'climate', 'set_fan_mode', [entity_id], {
+            fan_mode: fan
+          });
         });
       }, 3000);
     }
 
     // Notify on any schedule or mode transition (skipping silent dynamic temp tweaks)
-    const scheduleKey = `${target.time}|${target.mode}|${target.temp}|${target.fan}`;
-    if (anyModeChanged || scheduleKey !== lastScheduleKey) {
-      lastScheduleKey = scheduleKey;
+    if (notifyUpdates.length > 0) {
+      const summary = notifyUpdates
+        .map(({ entity_id, target }) => `${states[entity_id]?.attributes?.friendly_name || entity_id}: ${target.mode.toUpperCase()} ${target.temp}°C`)
+        .join(', ');
       callService(ws, 'notify', 'notify', null, {
-        title: `🌡️ AC set to ${target.mode.toUpperCase()} at ${target.temp}°C (${timeStr})`,
-        message: 'Reason: Schedule enforced'
+        title: `🌡️ AC Schedule Enforced (${timeStr})`,
+        message: summary
       });
     }
   }
@@ -217,6 +304,14 @@ function evaluateLogic(ws) {
     callService(ws, 'notify', 'notify', null, {
       title: `⚠️ AC Offline Warning (${timeStr})`,
       message: `Could not enforce the schedule because these AC units are unavailable/offline: ${deadNames}`
+    });
+  }
+
+  // Execute Room Temp Sensor Warnings
+  if (offlineSensorsToWarn.length > 0) {
+    callService(ws, 'notify', 'notify', null, {
+      title: `⚠️ Room Temp Sensor Offline (${timeStr})`,
+      message: `Falling back to AC internal sensor:\n${offlineSensorsToWarn.join('\n')}`
     });
   }
 }
