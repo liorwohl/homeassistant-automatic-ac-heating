@@ -351,8 +351,8 @@ class ConfigPage extends LitElement {
                 @change="${e => this.updateBlock(i, 'time', e.target.value)}" 
                 @blur="${this.sortBlocks}"
               >
-              <select .value="${block.ac || 'all'}" @change="${e => this.updateBlock(i, 'ac', e.target.value)}">
-                <option value="all" ?selected="${(block.ac || 'all') === 'all'}">All</option>
+              <select .value="${block.ac}" @change="${e => this.updateBlock(i, 'ac', e.target.value)}">
+                <option value="all" ?selected="${block.ac === 'all'}">All</option>
                 ${selectedAcs.map(ac => {
                   const entity = climates.find(e => e.entity_id === ac.entity_id);
                   return html`
@@ -376,7 +376,7 @@ class ConfigPage extends LitElement {
                 <option value="dry">Dry</option>
                 <option value="off">Off</option>
               </select>
-              <select .value="${block.fan || 'auto'}" @change="${e => this.updateBlock(i, 'fan', e.target.value)}">
+              <select .value="${block.fan}" @change="${e => this.updateBlock(i, 'fan', e.target.value)}">
                 <option value="auto">Auto</option>
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
