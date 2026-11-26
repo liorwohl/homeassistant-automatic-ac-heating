@@ -88,6 +88,10 @@ class ConfigPage extends LitElement {
       }
     }
 
+    select {
+      max-width: stretch;
+    }
+
     select[multiple] {
       height: 8.5rem;
     }
@@ -97,7 +101,7 @@ class ConfigPage extends LitElement {
       gap: 0.75rem;
       margin-bottom: 0.35rem;
       padding-bottom: 0.35rem;
-      border-bottom: 1px solid color-mix(in srgb, var(--border-color) 30%, transparent);
+      border-bottom: 1px solid color-mix(in srgb, var(--border-color) 40%, transparent);
       align-items: center;
       flex-wrap: wrap;
       &:last-of-type {
