@@ -108,7 +108,10 @@ function getEffectiveTemp(acConfig, targetTemp, useSensor = true) {
 
   const step = parseFloat(attributes?.target_temp_step) || 0.5;
   const currentTemp = parseFloat(attributes?.temperature);
-  const raw = Math.min(30, Math.max(17, targetTemp + (acInternal - roomTemp)));
+
+  // Multiply the room temp difference by 3 so the AC actually throttles down once the room reaches target
+  const P_GAIN = 3;
+  const raw = Math.min(30, Math.max(17, acInternal + (targetTemp - roomTemp) * P_GAIN));
 
   // Deadband to prevent sensor flicker ping-ponging across rounding boundaries
   if (!isNaN(currentTemp) && Math.abs(raw - currentTemp) < step * 0.8) {
