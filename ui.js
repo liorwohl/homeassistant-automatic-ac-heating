@@ -97,10 +97,10 @@ class ConfigPage extends LitElement {
       gap: 0.75rem;
       margin-bottom: 0.35rem;
       padding-bottom: 0.35rem;
-      border-bottom: 1px solid ;
+      border-bottom: 1px solid color-mix(in srgb, var(--border-color) 30%, transparent);
       align-items: center;
       flex-wrap: wrap;
-      &:last-child {
+      &:last-of-type {
         border-bottom: 0;
       }
     }
