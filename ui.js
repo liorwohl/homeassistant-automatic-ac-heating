@@ -95,9 +95,14 @@ class ConfigPage extends LitElement {
     .schedule-row {
       display: flex;
       gap: 0.75rem;
-      margin-bottom: 0.75rem;
+      margin-bottom: 0.35rem;
+      padding-bottom: 0.35rem;
+      border-bottom: 1px solid ;
       align-items: center;
       flex-wrap: wrap;
+      &:last-child {
+        border-bottom: 0;
+      }
     }
 
     .checkbox-label {
