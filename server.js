@@ -25,15 +25,8 @@ let lastScheduleKeys = {};
 // Memory tracker to prevent offline notification spam every 60 seconds
 let offlineNotified = new Set(); 
 
-function normalizeConfig(savedConfig) {
-  savedConfig.acs = (savedConfig.acs || [])
-    .map(ac => typeof ac === 'string' ? { entity_id: ac, temp_sensor: '' } : ac)
-    .filter(ac => ac && ac.entity_id);
-  return savedConfig;
-}
-
 if (fs.existsSync(DATA_FILE)) {
-  config = normalizeConfig(JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')));
+  config = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 }
 
 // --- Automation Logic Engine ---
@@ -113,10 +106,10 @@ function getEffectiveTemp(acConfig, targetTemp, useSensor = true) {
  * Specific AC blocks take precedence over 'all' blocks at the exact same time.
  */
 function getTargetBlock(acEntityId, timeStr) {
-  const matching = config.schedule.filter(block => !block.ac || block.ac === 'all' || block.ac === acEntityId);
+  const matching = config.schedule.filter(block => block.ac === 'all' || block.ac === acEntityId);
   if (!matching.length) return null;
 
-  const isSpecific = block => (block.ac && block.ac !== 'all') ? 1 : 0;
+  const isSpecific = block => block.ac !== 'all' ? 1 : 0;
   matching.sort((a, b) => a.time.localeCompare(b.time) || (isSpecific(a) - isSpecific(b)));
 
   let target = matching[matching.length - 1];
@@ -400,7 +393,8 @@ setInterval(() => {
 app.get('/api/entities', (req, res) => res.json(Object.values(states)));
 app.get('/api/config', (req, res) => res.json(config));
 app.post('/api/config', (req, res) => {
-  config = normalizeConfig(req.body);
+  config = req.body;
+  config.acs = config.acs.filter(ac => ac.entity_id);
   fs.writeFileSync(DATA_FILE, JSON.stringify(config, null, 2));
   if (ws && ws.readyState === WebSocket.OPEN) evaluateLogic(ws);
   res.json({ success: true });
