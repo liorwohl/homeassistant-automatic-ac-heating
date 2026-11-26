@@ -1,4 +1,4 @@
-import { LitElement, html, css } from './node_modules/lit/index.js';
+import { LitElement, html, css } from 'lit';
 
 class ConfigPage extends LitElement {
   static styles = css`
