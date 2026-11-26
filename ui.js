@@ -42,6 +42,12 @@ class ConfigPage extends LitElement {
       box-shadow: 0px 2px 1px -1px rgba(0, 0, 0, 0.2), 0px 1px 1px 0px rgba(0, 0, 0, 0.14), 0px 1px 3px 0px rgba(0, 0, 0, 0.12);
     }
 
+    .split-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
     label, h3 {
       display: block;
       color: var(--text-main);
@@ -217,7 +223,7 @@ class ConfigPage extends LitElement {
 
   async toggleMaster(entityId) {
     if (!entityId) return;
-    await fetch('api/toggle', {
+    await fetch('api/toggleMaster', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ entity_id: entityId })
@@ -238,7 +244,7 @@ class ConfigPage extends LitElement {
           <label>Master Toggle</label>
           <span class="hint">Create an <b>input_boolean</b> (Toggle) helper in <a href="/config/helpers" target="_top">Settings > Devices & Services > Helpers</a>.</span>
           
-          <div style="display:flex">
+          <div class="split-line">
 
             <select .value="${this.config.master}" @change="${e => this.handleSelect(e, 'master')}">
               <option value="">-- Select --</option>
@@ -251,7 +257,7 @@ class ConfigPage extends LitElement {
                 type="checkbox"
                 ?disabled="${!this.config.master}"
                 .checked="${this.entities.find(e => e.entity_id === this.config.master)?.state === 'on'}"
-                @change="${() => this.toggleEntity(this.config.master)}"
+                @change="${() => this.toggleMaster(this.config.master)}"
               />
             </label>
 

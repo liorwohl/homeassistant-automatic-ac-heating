@@ -401,7 +401,7 @@ app.post('/api/config', (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/api/toggle_master', (req, res) => {
+app.post('/api/toggleMaster', (req, res) => {
   const { entity_id } = req.body;
   if (!entity_id) return res.status(400).json({ error: 'entity_id is required' });
   callService(ws, 'input_boolean', 'toggle', [entity_id]);
