@@ -1,11 +1,10 @@
 const fs = require('fs');
 const express = require('express');
 const WebSocket = require('ws');
-const path = require('path');
 
 const app = express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'dist')));
+app.use(express.static(__dirname));
 
 const DATA_FILE = '/data/config.json';
 const MAX_SENSOR_AGE_HOURS = 2;
