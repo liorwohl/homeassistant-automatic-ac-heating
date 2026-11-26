@@ -22,7 +22,12 @@ let reconnectTimer = null;
 let lastScheduleKeys = {};
 
 // Memory tracker to prevent offline notification spam every 60 seconds
-let offlineNotified = new Set(); 
+let offlineNotified = new Set();
+
+function log(...args) {
+  const timestamp = new Date().toLocaleTimeString('en-GB', { timeZone: haTimeZone, hour12: false });
+  console.log(`[${timestamp}]`, ...args);
+}
 
 if (fs.existsSync(DATA_FILE)) {
   config = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
@@ -35,12 +40,12 @@ if (fs.existsSync(DATA_FILE)) {
  */
 function callService(ws, domain, service, entityIds, data = {}) {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
-    console.error(`[ERROR] Cannot send ${domain}.${service} - WebSocket is disconnected!`);
+    log(`[ERROR] Cannot send ${domain}.${service} - WebSocket is disconnected!`);
     return;
   }
   const payload = { id: msgId++, type: 'call_service', domain, service, service_data: data };
   if (entityIds && entityIds.length > 0) Object.assign(payload, { target: { entity_id: entityIds } });
-  console.log(`[ACTION] Calling ${domain}.${service} on ${entityIds ? entityIds.join(', ') : 'all'}`);
+  log(`[ACTION] Calling ${domain}.${service} on ${entityIds ? entityIds.join(', ') : 'all'} ${Object.keys(data).length ? JSON.stringify(data) : ''}`);
   ws.send(JSON.stringify(payload));
 }
 
@@ -87,7 +92,10 @@ function getEffectiveTemp(acConfig, targetTemp, useSensor = true) {
   const attributes = states[acConfig.entity_id]?.attributes;
   const roomTemp = parseFloat(states[acConfig.temp_sensor]?.state);
   const acInternal = parseFloat(attributes?.current_temperature);
-  if (isNaN(roomTemp) || isNaN(acInternal)) return clampedTarget;
+  if (isNaN(roomTemp) || isNaN(acInternal)) {
+    log(`[FALLBACK] ${acConfig.entity_id}: invalid temp reading (room=${roomTemp}, internal=${acInternal}), using ${clampedTarget}°C`);
+    return clampedTarget;
+  }
 
   const step = parseFloat(attributes?.target_temp_step) || 0.5;
   const currentTemp = parseFloat(attributes?.temperature);
@@ -95,6 +103,7 @@ function getEffectiveTemp(acConfig, targetTemp, useSensor = true) {
 
   // Deadband to prevent sensor flicker ping-ponging across rounding boundaries
   if (!isNaN(currentTemp) && Math.abs(raw - currentTemp) < step * 0.8) {
+    log(`[HOLD] ${acConfig.entity_id}: deadband holding ${currentTemp}°C (raw=${raw.toFixed(2)}, room=${roomTemp}, internal=${acInternal})`);
     return currentTemp;
   }
   return Number((Math.round(raw / step) * step).toFixed(1));
@@ -122,13 +131,19 @@ function getTargetBlock(acEntityId, timeStr) {
  * Core rules engine. Evaluates presence, window sensors, and schedules to determine required AC states.
  */
 function evaluateLogic(ws) {
-  if (!config.master || !states[config.master] || states[config.master].state !== 'on') return;
-  if (!config.schedule.length) return;
+  if (!config.master || !states[config.master] || states[config.master].state !== 'on') {
+    log(`[SKIP] Master toggle (${config.master || 'unset'}) is ${states[config.master]?.state || 'missing'}`);
+    return;
+  }
+  if (!config.schedule.length) {
+    log('[SKIP] Schedule is empty');
+    return;
+  }
 
   const isGuest = config.guest && states[config.guest]?.state === 'on';
   const zoneState = parseFloat(states[config.zone]?.state || '0');
   const isHome = zoneState > 0 || isGuest;
-  
+
   const openWindows = config.windows.filter(w => states[w]?.state === 'on');
   const anyWindowOpen = openWindows.length > 0;
 
@@ -143,6 +158,10 @@ function evaluateLogic(ws) {
   // Evaluate global shutdown conditions: empty house or open windows
   if (!isHome || anyWindowOpen) {
     lastScheduleKeys = {};
+    const reason = !isHome
+      ? `House is empty (zone=${zoneState}, guest=${Boolean(isGuest)})`
+      : `Open window(s): ${openWindows.map(w => states[w].attributes.friendly_name || w).join(', ')}`;
+
     // Filter ACs to only send turn_off commands to units genuinely active (ignoring offline/unknown units)
     const activeAcs = config.acs
       .map(ac => ac.entity_id)
@@ -150,17 +169,17 @@ function evaluateLogic(ws) {
         const state = states[id]?.state;
         return state && !['off', 'unavailable', 'unknown'].includes(state);
       });
-    
-    if (activeAcs.length > 0) {
-      const reason = !isHome ? 'House is empty'
-                   : `Open window(s): ${openWindows.map(w => states[w].attributes.friendly_name || w).join(', ')}`;
 
+    if (activeAcs.length > 0) {
+      log(`[SHUTDOWN] ${reason} -> turning off ${activeAcs.join(', ')}`);
       ensureSilent(ws, activeAcs);
       callService(ws, 'climate', 'turn_off', activeAcs);
       callService(ws, 'notify', 'notify', null, {
         title: `🛑 Turning OFF the AC (${timeStr})`,
         message: `Reason: ${reason}`
       });
+    } else {
+      log(`[SKIP] ${reason} (all ACs already off)`);
     }
     return;
   }
@@ -175,12 +194,16 @@ function evaluateLogic(ws) {
 
   config.acs.forEach(ac => {
     const target = getTargetBlock(ac.entity_id, timeStr);
-    if (!target) return;
+    if (!target) {
+      log(`[SKIP] ${ac.entity_id}: no matching schedule block at ${timeStr}`);
+      return;
+    }
 
     const s = states[ac.entity_id];
-    
+
     // Check if the AC is dead/offline
     if (!s || ['unavailable', 'unknown'].includes(s.state)) {
+      log(`[SKIP] ${ac.entity_id}: offline (state=${s?.state || 'missing'})`);
       if (!offlineNotified.has(ac.entity_id)) {
         offlineAcsToWarn.push(ac.entity_id);
         offlineNotified.add(ac.entity_id); // Log it so we don't spam the warning next minute
@@ -194,13 +217,19 @@ function evaluateLogic(ws) {
     // Handle per-AC scheduled off period
     if (target.mode === 'off') {
       delete lastScheduleKeys[ac.entity_id];
-      if (s.state !== 'off') acsToTurnOff.push(ac.entity_id);
+      if (s.state !== 'off') {
+        log(`[DECISION] ${ac.entity_id}: scheduled off (${target.time}), currently ${s.state} -> turn_off`);
+        acsToTurnOff.push(ac.entity_id);
+      } else {
+        log(`[OK] ${ac.entity_id}: scheduled off (${target.time}), already off`);
+      }
       return;
     }
 
     // Check paired external room sensor health (unavailable or stale)
     const sensorError = ac.temp_sensor ? getSensorError(ac.temp_sensor) : null;
     if (sensorError) {
+      log(`[WARN] ${ac.entity_id}: sensor error -> ${sensorError}`);
       if (!offlineNotified.has(ac.temp_sensor)) {
         offlineSensorsToWarn.push(sensorError);
         offlineNotified.add(ac.temp_sensor);
@@ -211,29 +240,37 @@ function evaluateLogic(ws) {
 
     const effectiveTemp = getEffectiveTemp(ac, parseFloat(target.temp), !sensorError);
     const scheduleKey = `${target.time}|${target.mode}|${target.temp}|${target.fan}`;
-    
+
     // SHORT-CIRCUIT: If the AC is off but should be on (or vice versa), flag it immediately.
     if (s.state !== target.mode) {
+      log(`[DECISION] ${ac.entity_id}: mode ${s.state} -> ${target.mode}, temp=${effectiveTemp}°C, fan=${target.fan || 'unchanged'} (block ${target.time})`);
       tempUpdates.push({ entity_id: ac.entity_id, temp: effectiveTemp, mode: target.mode });
       if (target.fan) fanUpdates.push({ entity_id: ac.entity_id, fan: target.fan });
       lastScheduleKeys[ac.entity_id] = scheduleKey;
       notifyUpdates.push({ entity_id: ac.entity_id, target });
       return;
     }
-    
+
     // Safe float comparison to prevent HA String vs Number false mismatches
     const currentTemp = parseFloat(s.attributes.temperature);
-    
+
     // Check if the fan speed diverges from the schedule
     const fanMismatch = target.fan && s.attributes.fan_mode !== target.fan;
     const tempMismatch = currentTemp !== effectiveTemp;
     const scheduleChanged = scheduleKey !== lastScheduleKeys[ac.entity_id];
     lastScheduleKeys[ac.entity_id] = scheduleKey;
-    
+
+    if (!tempMismatch && !fanMismatch) {
+      log(`[OK] ${ac.entity_id}: already ${s.state} ${currentTemp}°C fan=${s.attributes.fan_mode} (block ${target.time})`);
+      return;
+    }
+
     if (tempMismatch) {
+      log(`[DECISION] ${ac.entity_id}: temp ${currentTemp}°C -> ${effectiveTemp}°C (target ${target.temp}°C, block ${target.time})`);
       tempUpdates.push({ entity_id: ac.entity_id, temp: effectiveTemp, mode: target.mode });
     }
     if (fanMismatch) {
+      log(`[DECISION] ${ac.entity_id}: fan ${s.attributes.fan_mode} -> ${target.fan} (block ${target.time})`);
       fanUpdates.push({ entity_id: ac.entity_id, fan: target.fan });
     }
     if ((tempMismatch || fanMismatch) && scheduleChanged) {
@@ -292,7 +329,7 @@ function evaluateLogic(ws) {
   // Execute Offline Warnings
   if (offlineAcsToWarn.length > 0) {
     const deadNames = offlineAcsToWarn.map(ac => states[ac]?.attributes?.friendly_name || ac).join(', ');
-    
+
     callService(ws, 'notify', 'notify', null, {
       title: `⚠️ AC Offline Warning (${timeStr})`,
       message: `Could not enforce the schedule because these AC units are unavailable/offline: ${deadNames}`
@@ -311,40 +348,41 @@ function evaluateLogic(ws) {
 // --- Resilient WebSocket Connection ---
 
 function connectWebSocket() {
-  console.log('[WS] Attempting connection to Home Assistant...');
+  log('[WS] Attempting connection to Home Assistant...');
   ws = new WebSocket('ws://supervisor/core/websocket');
 
   ws.on('open', () => {
-    console.log('[WS] Connected! Sending authentication token...');
+    log('[WS] Connected! Sending authentication token...');
     ws.send(JSON.stringify({ type: 'auth', access_token: token }));
     if (reconnectTimer) clearInterval(reconnectTimer);
   });
 
   ws.on('message', (data) => {
     const msg = JSON.parse(data);
-    
+
     if (msg.type === 'auth_invalid') {
-      console.error('[WS ERROR] Authentication failed! Check supervisor token permissions.');
+      log('[WS ERROR] Authentication failed! Check supervisor token permissions.');
     }
 
     if (msg.type === 'auth_ok') {
-      console.log('[WS] Authenticated successfully. Fetching states and subscribing to events...');
+      log('[WS] Authenticated successfully. Fetching states and subscribing to events...');
       getConfigId = msgId++;
       ws.send(JSON.stringify({ id: getConfigId, type: 'get_config' }));
-      
+
       getStatesId = msgId++;
       ws.send(JSON.stringify({ id: getStatesId, type: 'get_states' }));
-      
+
       ws.send(JSON.stringify({ id: msgId++, type: 'subscribe_events', event_type: 'state_changed' }));
     }
-    
+
     if (msg.type === 'result') {
       if (msg.id === getConfigId && msg.result && msg.result.time_zone) {
         haTimeZone = msg.result.time_zone;
+        log(`[WS] Home Assistant timezone: ${haTimeZone}`);
       }
       if (msg.id === getStatesId && Array.isArray(msg.result)) {
         msg.result.forEach(e => { states[e.entity_id] = e; });
-        console.log(`[WS] Loaded initial states for ${msg.result.length} entities.`);
+        log(`[WS] Loaded initial states for ${msg.result.length} entities.`);
         evaluateLogic(ws);
       }
     }
@@ -352,7 +390,7 @@ function connectWebSocket() {
     if (msg.type === 'event' && msg.event.event_type === 'state_changed') {
       const entityId = msg.event.data.entity_id;
       states[entityId] = msg.event.data.new_state;
-      
+
       const relevant = [
         config.master,
         config.guest,
@@ -362,7 +400,7 @@ function connectWebSocket() {
         ...config.windows
       ];
       if (relevant.includes(entityId)) {
-        console.log(`[EVENT] Monitored entity changed: ${entityId} -> ${states[entityId]?.state}`);
+        log(`[EVENT] Monitored entity changed: ${entityId} -> ${states[entityId]?.state}`);
         clearTimeout(evaluateTimeout);
         evaluateTimeout = setTimeout(() => evaluateLogic(ws), 2000);
       }
@@ -370,11 +408,11 @@ function connectWebSocket() {
   });
 
   ws.on('error', (err) => {
-    console.error('[WS ERROR]', err.message);
+    log('[WS ERROR]', err.message);
   });
 
   ws.on('close', (code, reason) => {
-    console.log(`[WS] Connection closed (${code}). Reconnecting in 5 seconds...`);
+    log(`[WS] Connection closed (${code}). Reconnecting in 5 seconds...`);
     ws = null;
     clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(connectWebSocket, 5000);
@@ -397,6 +435,7 @@ app.post('/api/config', (req, res) => {
   config = req.body;
   config.acs = config.acs.filter(ac => ac.entity_id);
   fs.writeFileSync(DATA_FILE, JSON.stringify(config, null, 2));
+  log(`[API] Config saved (${config.acs.length} ACs, ${config.schedule.length} schedule blocks)`);
   if (ws && ws.readyState === WebSocket.OPEN) evaluateLogic(ws);
   res.json({ success: true });
 });
@@ -409,4 +448,4 @@ app.post('/api/toggleMaster', (req, res) => {
 });
 
 const port = process.env.SUPERVISOR_INGRESS_PORT || 8099;
-app.listen(port, () => console.log(`[HTTP] Express Server listening on port ${port}`));
+app.listen(port, () => log(`[HTTP] Express Server listening on port ${port}`));
