@@ -74,7 +74,7 @@ class ConfigPage extends LitElement {
       color: var(--text-main);
       font-size: 1rem;
       outline: none;
-      color-scheme: light dark; 
+      color-scheme: light dark;
 
       &:focus {
         border-color: var(--accent-color);
@@ -137,6 +137,7 @@ class ConfigPage extends LitElement {
     const [entitiesResponse, configResponse] = await Promise.all([ fetch('api/entities'), fetch('api/config') ]);
     this.entities = await entitiesResponse.json();
     this.config = await configResponse.json();
+    if (!this.config.acs.length) { this.addAc(); }
     if (!this.config.schedule.length) { this.addBlock(); }
   }
 
@@ -153,6 +154,21 @@ class ConfigPage extends LitElement {
 
   handleSelect(e, key) {
     this.config = { ...this.config, [key]: e.target.value };
+  }
+
+  addAc() {
+    this.config.acs = [...this.config.acs, { entity_id: '', temp_sensor: '' }];
+    this.requestUpdate();
+  }
+
+  removeAc(index) {
+    this.config.acs = this.config.acs.filter((_, i) => i !== index);
+    this.requestUpdate();
+  }
+
+  updateAc(index, field, value) {
+    this.config.acs[index][field] = value;
+    this.requestUpdate();
   }
 
   addBlock() {
@@ -187,6 +203,9 @@ class ConfigPage extends LitElement {
   }
 
   render() {
+    const climates = this.entities.filter(e => e.entity_id.startsWith('climate.'));
+    const tempSensors = this.entities.filter(e => e.entity_id.startsWith('sensor.') && e.attributes?.device_class === 'temperature');
+
     return html`
       <h2>Automatic AC Heating Configuration</h2>
 
@@ -219,15 +238,30 @@ class ConfigPage extends LitElement {
         </div>
 
         <div class="form-group">
-          <label>Climate Entities (ACs)</label>
-          <span class="hint">Hold <b>Ctrl</b> (or <b>Cmd</b> on Mac) to select multiple entities.</span>
-          <select multiple @change="${e => this.handleMultiSelect(e, 'acs')}">
-            ${this.entities.filter(e => e.entity_id.startsWith('climate')).map(e => html`
-              <option value="${e.entity_id}" ?selected="${this.config.acs.includes(e.entity_id)}">
-                ${e.attributes.friendly_name || e.entity_id}
-              </option>
-            `)}
-          </select>
+          <h3>Climate Entities (ACs)</h3>
+          <span class="hint">Optionally pair each AC with an external room temperature sensor for dynamic setpoint control.</span>
+          ${this.config.acs.map((ac, i) => html`
+            <div class="schedule-row">
+              <select @change="${e => this.updateAc(i, 'entity_id', e.target.value)}">
+                <option value="">-- Select AC --</option>
+                ${climates.map(e => html`
+                  <option value="${e.entity_id}" ?selected="${e.entity_id === ac.entity_id}">
+                    ${e.attributes.friendly_name || e.entity_id}
+                  </option>
+                `)}
+              </select>
+              <select @change="${e => this.updateAc(i, 'temp_sensor', e.target.value)}">
+                <option value="">-- No External Sensor --</option>
+                ${tempSensors.map(e => html`
+                  <option value="${e.entity_id}" ?selected="${e.entity_id === ac.temp_sensor}">
+                    ${e.attributes.friendly_name || e.entity_id}
+                  </option>
+                `)}
+              </select>
+              <button type="button" class="delete-button" @click="${() => this.removeAc(i)}">X</button>
+            </div>
+          `)}
+          <button type="button" @click="${this.addAc}">+ Add AC</button>
         </div>
 
         <div class="form-group">
@@ -257,7 +291,7 @@ class ConfigPage extends LitElement {
                 type="number" 
                 .value="${block.temp}" 
                 step="0.5" 
-                min="17" 
+                min="10" 
                 max="30" 
                 @change="${e => this.updateBlock(i, 'temp', e.target.value)}"
               >
