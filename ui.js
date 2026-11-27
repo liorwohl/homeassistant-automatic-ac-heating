@@ -58,10 +58,9 @@ class ConfigPage extends LitElement {
     }
 
     .hint {
-      display: block;
       color: var(--text-muted);
       font-size: 0.85rem;
-      margin-bottom: 0.5rem;
+      margin: 0 0 0.5rem 0;
 
       & a {
         color: var(--accent-color);
@@ -252,7 +251,7 @@ class ConfigPage extends LitElement {
 
         <div class="form-group">
           <label>Master Toggle</label>
-          <span class="hint">Create an <b>input_boolean</b> (Toggle) helper in <a href="/config/helpers" target="_top">Settings > Devices & Services > Helpers</a>.</span>
+          <p class="hint">Create an <b>input_boolean</b> (Toggle) helper in <a href="/config/helpers" target="_top">Settings > Devices & Services > Helpers</a>.</p>
           
           <div class="split-line">
 
@@ -275,17 +274,8 @@ class ConfigPage extends LitElement {
         </div>
 
         <div class="form-group">
-          <label>Guest Mode Toggle</label>
-          <span class="hint">Create an <b>input_boolean</b> (Toggle) helper in <a href="/config/helpers" target="_top">Settings > Devices & Services > Helpers</a>.</span>
-          <select .value="${this.config.guest}" @change="${e => this.handleSelect(e, 'guest')}">
-            <option value="">-- None --</option>
-            ${this.getOptions('input_boolean')}
-          </select>
-        </div>
-
-        <div class="form-group">
           <label>Presence Zone</label>
-          <span class="hint">Choose your "Home" zone here, if you want the ACs to turn off when no one is at home.</span>
+          <p class="hint">Choose your "Home" zone here, if you want the ACs to turn off when no one is at home.</p>
           <select .value="${this.config.zone}" @change="${e => this.handleSelect(e, 'zone')}">
             <option value="">-- Select --</option>
             ${this.getOptions('zone')}
@@ -293,8 +283,17 @@ class ConfigPage extends LitElement {
         </div>
 
         <div class="form-group">
+          <label>Guest Mode Toggle</label>
+          <p class="hint">Create an <b>input_boolean</b> (Toggle) helper in <a href="/config/helpers" target="_top">Settings > Devices & Services > Helpers</a>.</p>
+          <select .value="${this.config.guest}" @change="${e => this.handleSelect(e, 'guest')}">
+            <option value="">-- None --</option>
+            ${this.getOptions('input_boolean')}
+          </select>
+        </div>
+
+        <div class="form-group">
           <h3>Climate Entities (ACs)</h3>
-          <span class="hint">Optional: pair each AC with an external room temperature sensor. Built-in AC sensors read the unit's own airflow near the ceiling instead of the real room temperature. So when pairing with sensor, the app server will calculate the difference and dynamically shifts the AC's setpoint to hold your actual room target temperature by the external sensor.</span>
+          <p class="hint">Optional: pair each AC with an external room temperature sensor. Built-in AC sensors read the unit's own airflow near the ceiling instead of the real room temperature. So when pairing with sensor, the app server will calculate the difference and dynamically shifts the AC's setpoint to hold your actual room target temperature by the external sensor.<br><b>Heat Offset (°C):</b> shifts the setpoint in heat mode (e.g. -2 helps the AC slow down once target is reached). <b>Temp Multiplier:</b> multiplies the room vs. target difference so the AC reacts faster (e.g. 3). Leave empty to not use.</p>
           ${this.config.acs.map((ac, i) => {
             const inUse = this.isAcUsedInSchedule(ac.entity_id);
             return html`
@@ -315,6 +314,23 @@ class ConfigPage extends LitElement {
                     </option>
                   `)}
                 </select>
+                ${ac.temp_sensor ? html`
+                  <input
+                    type="number"
+                    step="0.5"
+                    placeholder="Heat Offset (°C)"
+                    .value="${ac.heat_offset ?? ''}"
+                    @change="${e => this.updateAc(i, 'heat_offset', e.target.value)}"
+                  >
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="1"
+                    placeholder="Temp Multiplier"
+                    .value="${ac.temp_multiplier ?? ''}"
+                    @change="${e => this.updateAc(i, 'temp_multiplier', e.target.value)}"
+                  >
+                ` : ''}
                 <button
                   type="button"
                   class="delete-button"
@@ -330,7 +346,7 @@ class ConfigPage extends LitElement {
 
         <div class="form-group">
           <label>Window/Door Sensors</label>
-          <span class="hint">Hold <b>Ctrl</b> (or <b>Cmd</b> on Mac) to select multiple entities.</span>
+          <p class="hint">Hold <b>Ctrl</b> (or <b>Cmd</b> on Mac) to select multiple entities.</p>
           <select multiple @change="${e => this.handleMultiSelect(e, 'windows')}">
             ${this.entities.filter(e => e.entity_id.startsWith('binary_sensor')).map(e => html`
               <option value="${e.entity_id}" ?selected="${this.config.windows.includes(e.entity_id)}">
@@ -342,7 +358,7 @@ class ConfigPage extends LitElement {
 
         <div class="form-group">
           <h3>Schedule Blocks</h3>
-          <span class="hint">Blocks are automatically sorted by time. Order does not matter.</span>
+          <p class="hint">Blocks are automatically sorted by time. Order does not matter.</p>
           ${this.config.schedule.map((block, i) => html`
             <div class="schedule-row">
               <input 

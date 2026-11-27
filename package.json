@@ -1,6 +1,6 @@
 {
   "name": "homeassistant-automatic-ac-heating",
-  "version": "1.0.34",
+  "version": "1.0.35",
   "main": "server.js",
   "scripts": {
     "prepare": "husky || true"

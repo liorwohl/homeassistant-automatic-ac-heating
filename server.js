@@ -97,7 +97,7 @@ function getSensorError(sensorId) {
 /**
  * Calculates the dynamic setpoint using an external room sensor, or falls back to targetTemp.
  */
-function getEffectiveTemp(acConfig, targetTemp, useSensor = true) {
+function getEffectiveTemp(acConfig, targetTemp, targetMode, useSensor = true) {
   const clampedTarget = Math.min(30, Math.max(17, targetTemp));
   if (!acConfig.temp_sensor || !useSensor) return clampedTarget;
 
@@ -112,9 +112,9 @@ function getEffectiveTemp(acConfig, targetTemp, useSensor = true) {
   const step = parseFloat(attributes?.target_temp_step) || 0.5;
   const currentTemp = parseFloat(attributes?.temperature);
 
-  // Multiply the room temp difference by 3 so the AC actually throttles down once the room reaches target
-  const P_GAIN = 3;
-  const raw = Math.min(30, Math.max(17, acInternal + (targetTemp - roomTemp) * P_GAIN));
+  const heatOffset = targetMode === 'heat' ? (parseFloat(acConfig.heat_offset) || 0) : 0;
+  const tempMultiplier = parseFloat(acConfig.temp_multiplier) || 1;
+  const raw = Math.min(30, Math.max(17, acInternal + heatOffset + (targetTemp - roomTemp) * tempMultiplier));
 
   // Deadband to prevent sensor flicker ping-ponging across rounding boundaries
   if (!isNaN(currentTemp) && Math.abs(raw - currentTemp) < step * 0.8) {
@@ -253,7 +253,7 @@ function evaluateLogic(ws) {
       offlineNotified.delete(ac.temp_sensor);
     }
 
-    const effectiveTemp = getEffectiveTemp(ac, parseFloat(target.temp), !sensorError);
+    const effectiveTemp = getEffectiveTemp(ac, parseFloat(target.temp), target.mode, !sensorError);
     const scheduleKey = `${target.time}|${target.mode}|${target.temp}|${target.fan}`;
 
     // SHORT-CIRCUIT: If the AC is off but should be on (or vice versa), flag it immediately.
