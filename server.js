@@ -146,8 +146,8 @@ function getTargetBlock(acEntityId, timeStr) {
  * Core rules engine. Evaluates presence, window sensors, and schedules to determine required AC states.
  */
 function evaluateLogic(ws) {
-  if (!config.master || !states[config.master] || states[config.master].state !== 'on') {
-    log(`[SKIP] Master toggle (${config.master || 'unset'}) is ${states[config.master]?.state || 'missing'}`);
+  if (config.master && (!states[config.master] || states[config.master].state !== 'on')) {
+    log(`[SKIP] Master toggle (${config.master}) is ${states[config.master]?.state || 'missing'}`);
     return;
   }
   if (!config.schedule.length) {
@@ -157,7 +157,7 @@ function evaluateLogic(ws) {
 
   const isGuest = config.guest && states[config.guest]?.state === 'on';
   const zoneState = parseFloat(states[config.zone]?.state || '0');
-  const isHome = zoneState > 0 || isGuest;
+  const isHome = !config.zone || zoneState > 0 || isGuest;
 
   const openWindows = config.windows.filter(w => states[w]?.state === 'on');
   const anyWindowOpen = openWindows.length > 0;
@@ -434,11 +434,18 @@ function connectWebSocket() {
   });
 }
 
-// Start initial connection
-connectWebSocket();
-setInterval(() => {
-  if (ws && ws.readyState === WebSocket.OPEN) evaluateLogic(ws);
-}, 60000);
+// Start initial connection (or load mock data when running locally without HA)
+if (token) {
+  connectWebSocket();
+  setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) evaluateLogic(ws);
+  }, 60000);
+} else {
+  log('[DEV] No SUPERVISOR_TOKEN found — loading mock.json');
+  const mock = require('./mock.json');
+  mock.entities.forEach(e => { states[e.entity_id] = e; });
+  config = mock.config;
+}
 
 // --- API Routes ---
 
@@ -455,7 +462,7 @@ app.post('/api/config', (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/api/toggleMaster', (req, res) => {
+app.post('/api/toggleEntity', (req, res) => {
   const { entity_id } = req.body;
   if (!entity_id) return res.status(400).json({ error: 'entity_id is required' });
   callService(ws, 'input_boolean', 'toggle', [entity_id]);

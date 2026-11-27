@@ -1,0 +1,29 @@
+{
+  "entities": [
+    { "entity_id": "input_boolean.ac_master", "state": "on", "attributes": { "friendly_name": "AC Master" } },
+    { "entity_id": "input_boolean.guest_mode", "state": "off", "attributes": { "friendly_name": "Guest Mode" } },
+    { "entity_id": "zone.home", "state": "2", "attributes": { "friendly_name": "Home" } },
+    { "entity_id": "climate.bedroom_ac", "state": "heat", "attributes": { "friendly_name": "Bedroom AC", "current_temperature": 22, "temperature": 21, "target_temp_step": 0.5, "fan_mode": "auto" } },
+    { "entity_id": "climate.living_room_ac", "state": "heat", "attributes": { "friendly_name": "Living Room AC", "current_temperature": 21, "temperature": 20, "target_temp_step": 0.5, "fan_mode": "auto" } },
+    { "entity_id": "sensor.bedroom_temp", "state": "19.5", "attributes": { "friendly_name": "Bedroom Temp", "device_class": "temperature" } },
+    { "entity_id": "sensor.living_room_temp", "state": "19.2", "attributes": { "friendly_name": "Living Room Temp", "device_class": "temperature" } },
+    { "entity_id": "binary_sensor.bedroom_window", "state": "off", "attributes": { "friendly_name": "Bedroom Window" } },
+    { "entity_id": "binary_sensor.living_room_window", "state": "off", "attributes": { "friendly_name": "Living Room Window" } }
+  ],
+  "config": {
+    "master": "input_boolean.ac_master",
+    "guest": "input_boolean.guest_mode",
+    "zone": "zone.home",
+    "windows": ["binary_sensor.bedroom_window", "binary_sensor.living_room_window"],
+    "acs": [
+      { "entity_id": "climate.bedroom_ac", "temp_sensor": "sensor.bedroom_temp", "heat_offset": "-2", "temp_multiplier": "3" },
+      { "entity_id": "climate.living_room_ac", "temp_sensor": "" }
+    ],
+    "schedule": [
+      { "time": "05:00", "ac": "all", "temp": 18, "mode": "heat", "fan": "auto", "led": true },
+      { "time": "10:00", "ac": "climate.living_room_ac", "temp": 10, "mode": "off", "fan": "low", "led": true },
+      { "time": "18:00", "ac": "all", "temp": 21, "mode": "heat", "fan": "auto", "led": false },
+      { "time": "23:00", "ac": "all", "temp": 14, "mode": "heat", "fan": "quiet", "led": false }
+    ]
+  }
+}
