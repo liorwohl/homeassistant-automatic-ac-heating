@@ -429,7 +429,7 @@ class ConfigPage extends LitElement {
                       .checked="${this.entities.find(e => e.entity_id === this.config.guest)?.state === 'on'}"
                       @change="${() => this.toggleEntity(this.config.guest)}"
                     />
-                    <span class="hint line">(${this.entities.find(e => e.entity_id === this.config.guest)?.state === 'on' ? 'Guest mode is ON - Home zone not checked, scheduling all day normally' : 'Guest mode is OFF - Will turn off the AC when no one at home'})</span>
+                    <span class="hint line">(${this.entities.find(e => e.entity_id === this.config.guest)?.state === 'on' ? 'Guest mode is ON - Home zone not checked' : 'Guest mode is OFF - Will turn off the AC when no one at home'})</span>
                   </label>
                 ` : ''}
               </div>
@@ -439,7 +439,7 @@ class ConfigPage extends LitElement {
 
         <div class="form-group">
           <h3>Climate Entities (ACs)</h3>
-          <p class="hint">Optional: pair each AC with an external room temperature sensor. Built-in AC sensors read the unit's own airflow near the ceiling instead of the real room temperature. So when pairing with sensor, the app server will calculate the difference and dynamically shifts the AC's setpoint to hold your actual room target temperature by the external sensor.<br /><b>Heat Offset (°C):</b> shifts the setpoint in heat mode (e.g. -2 helps the AC slow down once target is reached). <b>Temp Multiplier:</b> multiplies the room vs. target difference so the AC reacts faster (e.g. 3). Leave empty to not use.</p>
+          <p class="hint">Optional: pair each AC with an external room temperature sensor. Built-in AC sensors read the unit's own airflow near the ceiling instead of the real room temperature. So when pairing with sensor, the app server will calculate the difference and dynamically shifts the AC's setpoint to hold your actual room target temperature by the external sensor.<br /><b>Heat Offset (°C):</b> shifts the setpoint in heat mode (e.g. -2 helps the AC slow down once target is reached). <b>Temperature Multiplier:</b> multiplies the room vs. target difference so the AC reacts faster (e.g. 3). Leave empty to not use.</p>
           <div class="box-grid">
             ${this.config.acs.map((ac, i) => {
               return html`
@@ -456,7 +456,7 @@ class ConfigPage extends LitElement {
                     </select>
                   </div>
                   <div class="field">
-                    <label for="acSensor-${i}" class="field-label">Room Temp Sensor</label>
+                    <label for="acSensor-${i}" class="field-label">Room Temperature Sensor</label>
                     <select id="acSensor-${i}" .value="${ac.temp_sensor || ''}" @change="${e => this.updateAc(i, 'temp_sensor', e.target.value)}">
                       <option value="">-- No External Sensor --</option>
                       ${tempSensors.map(e => html`
@@ -479,7 +479,7 @@ class ConfigPage extends LitElement {
                       >
                     </div>
                     <div class="field">
-                      <label for="acMult-${i}" class="field-label">Temp Multiplier</label>
+                      <label for="acMult-${i}" class="field-label">Temperature Multiplier</label>
                       <input
                         id="acMult-${i}"
                         type="number"
@@ -550,7 +550,16 @@ class ConfigPage extends LitElement {
                   </select>
                 </div>
                 <div class="field">
-                  <label for="blockTemp-${i}" class="field-label">Target Temp (°C)</label>
+                  <label for="blockMode-${i}" class="field-label">Mode</label>
+                  <select id="blockMode-${i}" .value="${block.mode}" @change="${e => this.updateBlock(i, 'mode', e.target.value)}">
+                    <option value="heat">Heat</option>
+                    <option value="cool">Cool</option>
+                    <option value="dry">Dry</option>
+                    <option value="off">Off</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="blockTemp-${i}" class="field-label">Target Temperature (°C)</label>
                   <input
                     id="blockTemp-${i}"
                     type="number"
@@ -560,15 +569,6 @@ class ConfigPage extends LitElement {
                     max="30"
                     @change="${e => this.updateBlock(i, 'temp', e.target.value)}"
                   >
-                </div>
-                <div class="field">
-                  <label for="blockMode-${i}" class="field-label">Mode</label>
-                  <select id="blockMode-${i}" .value="${block.mode}" @change="${e => this.updateBlock(i, 'mode', e.target.value)}">
-                    <option value="heat">Heat</option>
-                    <option value="cool">Cool</option>
-                    <option value="dry">Dry</option>
-                    <option value="off">Off</option>
-                  </select>
                 </div>
                 <div class="field">
                   <label for="blockFan-${i}" class="field-label">Fan Speed</label>
